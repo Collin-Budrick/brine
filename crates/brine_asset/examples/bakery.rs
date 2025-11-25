@@ -20,8 +20,8 @@ fn main() {
         .with_env_filter(std::env::var("RUST_LOG").unwrap_or_default())
         .init();
 
-    let mc_data = MinecraftData::for_version("1.14.4");
-    let asset_pack = AssetPack::at_path(cargo_workspace_relative_path("../../assets/1.14.4"));
+    let mc_data = MinecraftData::for_version("1.21.4");
+    let asset_pack = AssetPack::at_path(cargo_workspace_relative_path("../../assets/1.21.4"));
 
     let baked_assets = bakery::bake_all(&mc_data, &asset_pack);
 

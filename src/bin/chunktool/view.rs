@@ -147,8 +147,8 @@ pub fn main(args: Args) {
         ProtocolPlugin,
     ));
 
-    let mc_data = MinecraftData::for_version("1.14.4");
-    let mc_assets = MinecraftAssets::new("assets/1.14.4", &mc_data).unwrap();
+    let mc_data = MinecraftData::for_version("1.21.4");
+    let mc_assets = MinecraftAssets::new("assets/1.21.4", &mc_data).unwrap();
     app.insert_resource(mc_data);
     app.insert_resource(mc_assets);
     app.add_plugins(TextureBuilderPlugin);

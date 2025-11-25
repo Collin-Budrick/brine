@@ -3,7 +3,7 @@
 SCRIPTPATH="$( cd -- "$(dirname "$0")" >/dev/null 2>&1 ; pwd -P )"
 
 # Default values for variables
-: ${VERSION:="1.14.4"}
+: ${VERSION:="1.21.4"}
 : ${DESTDIR:="${SCRIPTPATH}/src"}
 : ${DOCKER_IMAGE_NAME:="mc-decompile"}
 

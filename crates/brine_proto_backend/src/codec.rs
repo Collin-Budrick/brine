@@ -23,7 +23,7 @@ pub const HANDSHAKE_LOGIN_NEXT: i32 = 2;
 /// A protocol version has to be sent in the Handshake packet, even when
 /// attempting to discover the protocol version of the server. This is the value
 /// the backend should send when it does that.
-const DEFAULT_PROTOCOL_VERSION_STRING: &str = "1.14.4";
+const DEFAULT_PROTOCOL_VERSION_STRING: &str = "1.21.4";
 
 /// The states of the Minecraft protocol.
 ///

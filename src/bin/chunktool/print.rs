@@ -29,7 +29,7 @@ pub(crate) fn main(args: Args) {
 }
 
 fn print_chunk_from_file(path: &Path, section: Option<usize>) -> Result<()> {
-    let data = MinecraftData::for_version("1.14.4");
+    let data = MinecraftData::for_version("1.21.4");
     let chunk = load_chunk(path)?;
 
     let printer = ChunkPrinter { data, chunk };

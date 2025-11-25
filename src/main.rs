@@ -97,9 +97,9 @@ fn main() {
         );
     }
 
-    let mc_data = MinecraftData::for_version("1.14.4");
-    // Point at the vanilla 1.14.4 assets directory (contains assets/, data/, pack.mcmeta).
-    let mc_assets = MinecraftAssets::new("assets/1.14.4", &mc_data).unwrap();
+    let mc_data = MinecraftData::for_version("1.21.4");
+    // Point at the vanilla 1.21.4 assets directory (contains assets/, data/, pack.mcmeta).
+    let mc_assets = MinecraftAssets::new("assets/1.21.4", &mc_data).unwrap();
     app.insert_resource(mc_data);
     app.insert_resource(mc_assets);
     app.add_plugins((TextureBuilderPlugin, MinecraftWorldViewerPlugin));

@@ -11,8 +11,8 @@ use brine_data::MinecraftData;
 use brine_render::chunk::ChunkBakery;
 
 fn main() {
-    let mc_data = MinecraftData::for_version("1.14.4");
-    let mc_assets = MinecraftAssets::new("assets/1.14.4", &mc_data).unwrap();
+    let mc_data = MinecraftData::for_version("1.21.4");
+    let mc_assets = MinecraftAssets::new("assets/1.21.4", &mc_data).unwrap();
 
     App::new()
         .add_plugins(DefaultPlugins)

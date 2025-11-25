@@ -16,7 +16,7 @@ fn get_a_few_textures(
     TEXTURES.iter().enumerate().map(|(index, name)| {
         let key = TextureKey(index);
         let loc = ResourceIdentifier::texture(name);
-        let path = ResourcePath::for_resource("1.14.4", &loc);
+        let path = ResourcePath::for_resource("1.21.4", &loc);
         let handle = asset_server.load(path.as_ref());
         (key, handle)
     })
@@ -25,7 +25,7 @@ fn get_a_few_textures(
 // fn get_all_textures(
 //     asset_server: &AssetServer,
 // ) -> impl Iterator<Item = (TextureKey, Handle<Image>)> + '_ {
-//     let resource_provider = FileSystemResourceProvider::new("assets/1.14.4");
+//     let resource_provider = FileSystemResourceProvider::new("assets/1.21.4");
 
 //     resource_provider
 //         .enumerate_resources("minecraft", ResourceKind::Texture)
@@ -42,7 +42,7 @@ fn get_a_few_textures(
 //                 || resource_location.path().starts_with("particle/")
 //             {
 //                 let key = TextureKey(index);
-//                 let path = ResourcePath::for_resource("1.14.4", &resource_location);
+//                 let path = ResourcePath::for_resource("1.21.4", &resource_location);
 //                 let handle = asset_server.load(path.as_ref());
 //                 Some((key, handle))
 //             } else {
