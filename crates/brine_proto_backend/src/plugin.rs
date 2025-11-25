@@ -28,9 +28,9 @@ pub struct ProtocolBackendPlugin;
 
 impl Plugin for ProtocolBackendPlugin {
     fn build(&self, app: &mut App) {
-        app.add_plugin(NetworkPlugin::<ProtocolCodec>::default());
+        app.add_plugins(NetworkPlugin::<ProtocolCodec>::default());
 
-        app.add_system(log_network_errors);
+        app.add_systems(Update, log_network_errors);
 
         backend::build(app);
     }
