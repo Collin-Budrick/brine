@@ -115,10 +115,10 @@ pub fn build_bevy_mesh(voxel_mesh: &VoxelMesh) -> Mesh {
     }
 
     let mut mesh = Mesh::new(PrimitiveTopology::TriangleList);
-    mesh.set_attribute(Mesh::ATTRIBUTE_POSITION, positions);
-    mesh.set_attribute(Mesh::ATTRIBUTE_NORMAL, normals);
-    mesh.set_attribute(Mesh::ATTRIBUTE_UV_0, tex_coords);
-    mesh.set_indices(Some(Indices::U32(indices)));
+    mesh.insert_attribute(Mesh::ATTRIBUTE_POSITION, positions);
+    mesh.insert_attribute(Mesh::ATTRIBUTE_NORMAL, normals);
+    mesh.insert_attribute(Mesh::ATTRIBUTE_UV_0, tex_coords);
+    mesh.insert_indices(Indices::U32(indices));
 
     mesh
 }
