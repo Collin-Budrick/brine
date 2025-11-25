@@ -2,5 +2,5 @@
 /target
 cargo-timing*
 /data
-/assets/1.14.4/
+/assets/*/
 debug.plist

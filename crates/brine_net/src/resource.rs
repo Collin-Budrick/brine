@@ -4,7 +4,10 @@ use std::fmt::Debug;
 
 use async_channel::{unbounded, Receiver, Sender};
 use async_codec::{Decode, Encode};
-use bevy::{prelude::Resource, tasks::{Task, TaskPool}};
+use bevy::{
+    prelude::Resource,
+    tasks::{Task, TaskPool},
+};
 
 use crate::{
     connection::Connection,

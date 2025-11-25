@@ -14,8 +14,7 @@ use crate::{
 pub type CodecReader<'w, 's, Codec> =
     system_param::CodecReader<'w, 's, <Codec as Decode>::Item, Codec>;
 
-pub type CodecWriter<'w, Codec> =
-    system_param::CodecWriter<'w, <Codec as Encode>::Item, Codec>;
+pub type CodecWriter<'w, Codec> = system_param::CodecWriter<'w, <Codec as Encode>::Item, Codec>;
 
 /// Plugin that implements the provided network codec.
 ///

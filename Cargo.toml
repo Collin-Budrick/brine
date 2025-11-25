@@ -9,6 +9,7 @@ resolver = "2"
 members = [
     '.',
     './crates/*',
+    './xtask',
 ]
 
 # Compile all dependencies (but no workspace members) with extra optimizations
@@ -41,3 +42,7 @@ brine_voxel_v1 = { path = "./crates/brine_voxel_v1" }
 [patch.crates-io]
 bevy_ecs = { path = "third_party/bevy_ecs-0.6.0-patched" }
 winit = { path = "third_party/winit-0.26.1-patched" }
+ntapi = { path = "third_party/ntapi-0.3.6-patched" }
+
+[patch."https://github.com/BGR360/minecraft-data-rs"]
+minecraft-data-rs = { path = "third_party/minecraft-data-rs" }

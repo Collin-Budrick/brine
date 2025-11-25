@@ -130,10 +130,7 @@ impl CodecState {
     }
 
     pub fn compression_threshold(&self) -> Option<i32> {
-        match self
-            .compression_threshold
-            .load(Ordering::Relaxed)
-        {
+        match self.compression_threshold.load(Ordering::Relaxed) {
             -1 => None,
             value => Some(value),
         }
@@ -141,8 +138,7 @@ impl CodecState {
 
     pub fn set_compression_threshold(&self, threshold: Option<i32>) {
         let value = threshold.unwrap_or(-1);
-        self.compression_threshold
-            .store(value, Ordering::Relaxed);
+        self.compression_threshold.store(value, Ordering::Relaxed);
     }
 }
 

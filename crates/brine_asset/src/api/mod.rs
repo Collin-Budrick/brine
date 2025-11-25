@@ -5,9 +5,9 @@ use std::{
     sync::Arc,
 };
 
+use bevy_ecs::prelude::Resource;
 use minecraft_assets::api::{AssetPack, ResourcePath};
 use tracing::*;
-use bevy_ecs::prelude::Resource;
 
 pub use minecraft_assets::{api::Result, schemas::models::BlockFace};
 

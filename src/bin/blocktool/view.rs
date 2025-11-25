@@ -1,15 +1,12 @@
 use std::str::FromStr;
 
+use bevy::math::{primitives::Cuboid, Rect};
 use bevy::{
-    asset::RenderAssetUsages,
-    input::ButtonInput,
-    pbr::MeshMaterial3d,
-    prelude::*,
+    asset::RenderAssetUsages, input::ButtonInput, pbr::MeshMaterial3d, prelude::*,
     render::render_resource::PrimitiveTopology,
 };
-use bevy::math::{primitives::Cuboid, Rect};
-use bevy_mesh::{Indices, Mesh3d};
 use bevy_inspector_egui::quick::WorldInspectorPlugin;
+use bevy_mesh::{Indices, Mesh3d};
 
 use brine::debug::DebugWireframePlugin;
 use brine_asset::{BakedModel, BlockFace, MinecraftAssets};
@@ -357,15 +354,14 @@ fn spawn_block_state(
             ..Default::default()
         };
 
-        commands
-            .spawn((
-                Mesh3d(meshes.add(mesh)),
-                MeshMaterial3d(materials.add(material)),
-                Transform::default(),
-                GlobalTransform::default(),
-                Name::new(get_entity_name(block_state_id, mc_data)),
-                BlockMarker,
-            ));
+        commands.spawn((
+            Mesh3d(meshes.add(mesh)),
+            MeshMaterial3d(materials.add(material)),
+            Transform::default(),
+            GlobalTransform::default(),
+            Name::new(get_entity_name(block_state_id, mc_data)),
+            BlockMarker,
+        ));
     }
 
     has_model

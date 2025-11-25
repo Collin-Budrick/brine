@@ -2,8 +2,8 @@ use std::collections::{hash_map::Entry, HashMap, HashSet};
 use std::{any::Any, marker::PhantomData};
 
 use bevy::{pbr::MeshMaterial3d, prelude::*, tasks::AsyncComputeTaskPool};
-use bevy_mesh::Mesh3d;
 use bevy_image::{TextureAtlasLayout, TextureAtlasSources};
+use bevy_mesh::Mesh3d;
 use futures_lite::future;
 
 use brine_asset::{api::BlockFace, MinecraftAssets};
@@ -73,7 +73,10 @@ where
             app.add_systems(Update, Self::builder_task_spawn_unique);
         }
 
-        app.add_systems(Update, (Self::receive_built_meshes, Self::add_built_chunks_to_world));
+        app.add_systems(
+            Update,
+            (Self::receive_built_meshes, Self::add_built_chunks_to_world),
+        );
     }
 }
 
@@ -81,10 +84,7 @@ impl<T> ChunkBuilderPlugin<T>
 where
     T: ChunkBuilder + Default + Any + Send + Sync + 'static,
 {
-    fn builder_task_spawn(
-        chunk_event: event::clientbound::ChunkData,
-        commands: &mut Commands,
-    ) {
+    fn builder_task_spawn(chunk_event: event::clientbound::ChunkData, commands: &mut Commands) {
         let chunk = chunk_event.chunk_data;
         if !chunk.is_full() {
             return;
@@ -200,12 +200,13 @@ where
                 chunk_data.chunk_z,
             ))
             .with_children(move |parent| {
-                for (((section, mut mesh), (layout, sources, texture_handle)), face_textures) in chunk_data
-                    .sections
-                    .into_iter()
-                    .zip(voxel_meshes.into_iter())
-                    .zip(atlas_data.into_iter())
-                    .zip(face_textures.into_iter())
+                for (((section, mut mesh), (layout, sources, texture_handle)), face_textures) in
+                    chunk_data
+                        .sections
+                        .into_iter()
+                        .zip(voxel_meshes.into_iter())
+                        .zip(atlas_data.into_iter())
+                        .zip(face_textures.into_iter())
                 {
                     mesh.adjust_tex_coords(layout, sources, &face_textures);
 

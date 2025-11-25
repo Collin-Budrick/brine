@@ -209,8 +209,7 @@ impl MinecraftCodec {
                     let mut body = Vec::new();
                     if threshold >= 0 && id_and_data.len() >= threshold as usize {
                         VarInt(id_and_data.len() as i32).write_to(&mut body)?;
-                        let mut encoder =
-                            ZlibEncoder::new(Vec::new(), Compression::default());
+                        let mut encoder = ZlibEncoder::new(Vec::new(), Compression::default());
                         encoder.write_all(&id_and_data)?;
                         let compressed = encoder.finish()?;
                         body.extend_from_slice(&compressed);
@@ -475,11 +474,9 @@ mod test {
     async fn test_login_start() {
         do_packet_encode_test(
             MinecraftClientCodec::new(MinecraftProtocolState::Login),
-            packet::Packet::LoginStart(Box::new(
-                packet::login::serverbound::LoginStart {
-                    username: String::from("Username"),
-                },
-            )),
+            packet::Packet::LoginStart(Box::new(packet::login::serverbound::LoginStart {
+                username: String::from("Username"),
+            })),
             include_bytes!("../../test/packet-data/login/login_start.dat"),
         )
         .await;

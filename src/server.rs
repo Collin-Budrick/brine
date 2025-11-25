@@ -4,7 +4,10 @@ use std::{
     path::{Path, PathBuf},
 };
 
-use bevy::{prelude::*, tasks::{IoTaskPool, Task}};
+use bevy::{
+    prelude::*,
+    tasks::{IoTaskPool, Task},
+};
 
 use brine_chunk::Chunk;
 use brine_proto::event::clientbound::ChunkData;
@@ -44,10 +47,7 @@ pub struct ChunkDirectory {
 #[derive(Component)]
 struct LoadChunkTask(Task<Result<Chunk>>);
 
-fn load_chunks(
-    chunk_directory: Res<ChunkDirectory>,
-    mut commands: Commands,
-) {
+fn load_chunks(chunk_directory: Res<ChunkDirectory>, mut commands: Commands) {
     let task_pool = IoTaskPool::get();
     let entries = match fs::read_dir(&chunk_directory.path) {
         Ok(entries) => entries,

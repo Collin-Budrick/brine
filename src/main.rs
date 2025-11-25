@@ -21,9 +21,7 @@ use clap::Parser;
 use brine_proto::{AlwaysSuccessfulLoginPlugin, ProtocolPlugin};
 use brine_proto_backend::ProtocolBackendPlugin;
 use brine_voxel_v1::{
-    chunk_builder::{
-        component::BuiltChunkSection, ChunkBuilderPlugin, VisibleFacesChunkBuilder,
-    },
+    chunk_builder::{component::BuiltChunkSection, ChunkBuilderPlugin, VisibleFacesChunkBuilder},
     texture::TextureBuilderPlugin,
 };
 
@@ -92,9 +90,7 @@ fn main() {
             .as_deref()
             .map(normalize_server_address)
             .unwrap_or_else(|| SERVER.to_string());
-        app.add_plugins(
-            LoginPlugin::new(server, USERNAME.to_string()).exit_on_disconnect(),
-        );
+        app.add_plugins(LoginPlugin::new(server, USERNAME.to_string()).exit_on_disconnect());
     }
 
     let mc_data = MinecraftData::for_version("1.21.4");
@@ -141,12 +137,12 @@ pub struct MinecraftWorldViewerPlugin;
 impl Plugin for MinecraftWorldViewerPlugin {
     fn build(&self, app: &mut App) {
         app.add_plugins((
-                NoCameraPlayerPlugin,
-                ChunkBuilderPlugin::<VisibleFacesChunkBuilder>::default(),
-                // ChunkBuilderPlugin::<GreedyQuadsChunkBuilder>::default(),
-            ))
-            .add_systems(Startup, set_up_camera)
-            .add_systems(Update, give_chunk_sections_correct_y_height);
+            NoCameraPlayerPlugin,
+            ChunkBuilderPlugin::<VisibleFacesChunkBuilder>::default(),
+            // ChunkBuilderPlugin::<GreedyQuadsChunkBuilder>::default(),
+        ))
+        .add_systems(Startup, set_up_camera)
+        .add_systems(Update, give_chunk_sections_correct_y_height);
     }
 }
 

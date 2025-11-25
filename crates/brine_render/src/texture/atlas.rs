@@ -94,10 +94,7 @@ impl TextureAtlas {
     /// Build an atlas that maps the provided texture keys to the placeholder
     /// texture. This is a defensive fallback when stitching fails and ensures
     /// that every requested texture key is still routable.
-    pub fn placeholder_only<I>(
-        placeholder_texture: &Handle<Image>,
-        texture_keys: I,
-    ) -> Self
+    pub fn placeholder_only<I>(placeholder_texture: &Handle<Image>, texture_keys: I) -> Self
     where
         I: IntoIterator<Item = TextureKey>,
     {

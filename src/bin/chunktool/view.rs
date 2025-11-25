@@ -103,7 +103,10 @@ impl Chunks {
         section
     }
 
-    fn send_next_section(&mut self, chunk_events: &mut MessageWriter<event::clientbound::ChunkData>) {
+    fn send_next_section(
+        &mut self,
+        chunk_events: &mut MessageWriter<event::clientbound::ChunkData>,
+    ) {
         let section = self.next_section();
 
         let single_section_chunk = Chunk {
@@ -189,8 +192,7 @@ fn load_next_chunk(
     query: Query<Entity, With<BuiltChunk>>,
     mut commands: Commands,
 ) -> Result<()> {
-    let should_show_next =
-        input.just_pressed(KeyCode::Enter) || input.just_pressed(KeyCode::Space);
+    let should_show_next = input.just_pressed(KeyCode::Enter) || input.just_pressed(KeyCode::Space);
     let should_load_next_file = input.just_pressed(KeyCode::Enter);
 
     if should_load_next_file {

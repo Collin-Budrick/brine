@@ -1,13 +1,11 @@
 use std::ops::Add;
 
 use bevy::{
-    asset::RenderAssetUsages,
-    ecs::component::Component,
-    prelude::*,
+    asset::RenderAssetUsages, ecs::component::Component, prelude::*,
     render::render_resource::PrimitiveTopology,
 };
-use bevy_mesh::Indices;
 use bevy_image::{TextureAtlasLayout, TextureAtlasSources};
+use bevy_mesh::Indices;
 use brine_asset::BlockFace;
 
 /// The six sides of a voxel.

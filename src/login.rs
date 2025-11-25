@@ -51,10 +51,7 @@ impl Plugin for LoginPlugin {
                 Update,
                 (await_success, handle_disconnect).run_if(in_state(GameState::Login)),
             )
-            .add_systems(
-                Update,
-                handle_disconnect.run_if(in_state(GameState::Play)),
-            );
+            .add_systems(Update, handle_disconnect.run_if(in_state(GameState::Play)));
     }
 }
 

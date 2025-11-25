@@ -64,7 +64,10 @@ impl TextureManager {
 
         let handle = atlases.reserve_handle();
 
-        let pending_atlas = PendingAtlas { handle: handle.clone(), textures };
+        let pending_atlas = PendingAtlas {
+            handle: handle.clone(),
+            textures,
+        };
         self.pending_atlases.push(pending_atlas);
 
         handle

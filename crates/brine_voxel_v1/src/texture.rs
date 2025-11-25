@@ -23,12 +23,9 @@ struct PendingAtlas {
 
 impl PendingAtlas {
     fn all_textures_loaded(&self, asset_server: &AssetServer) -> bool {
-        self.textures.iter().all(|handle| {
-            matches!(
-                asset_server.get_load_state(handle),
-                Some(LoadState::Loaded)
-            )
-        })
+        self.textures
+            .iter()
+            .all(|handle| matches!(asset_server.get_load_state(handle), Some(LoadState::Loaded)))
     }
 }
 
@@ -62,9 +59,7 @@ impl BlockTextures {
         P: Into<AssetPath<'a>>,
     {
         match self.block_state_to_texture.entry(block_state) {
-            Entry::Occupied(handle) => {
-                handle.get().clone()
-            }
+            Entry::Occupied(handle) => handle.get().clone(),
             Entry::Vacant(entry) => {
                 let handle = get_path(block_state)
                     .map(|path| asset_server.load(path.into()))
@@ -168,10 +163,7 @@ impl BlockTextures {
                     let source_handle = if textures.get(handle).is_some() {
                         handle
                     } else {
-                        debug!(
-                            "Texture not loaded, substituting placeholder: {:?}",
-                            handle
-                        );
+                        debug!("Texture not loaded, substituting placeholder: {:?}", handle);
                         &self.placeholder_texture
                     };
 
@@ -182,14 +174,10 @@ impl BlockTextures {
 
                 match builder.build() {
                     Ok((layout, sources, image)) => {
-                        if let Err(err) =
-                            atlas_layouts.insert(pending_atlas.layout.id(), layout)
-                        {
+                        if let Err(err) = atlas_layouts.insert(pending_atlas.layout.id(), layout) {
                             error!("Failed to insert texture atlas layout: {err}");
                         }
-                        if let Err(err) =
-                            textures.insert(pending_atlas.atlas_texture.id(), image)
-                        {
+                        if let Err(err) = textures.insert(pending_atlas.atlas_texture.id(), image) {
                             error!("Failed to insert texture atlas image: {err}");
                         }
                         self.atlas_sources
@@ -201,7 +189,6 @@ impl BlockTextures {
                         true
                     }
                 }
-
             } else {
                 true
             }
@@ -241,10 +228,6 @@ impl TextureBuilderPlugin {
         mut atlas_layouts: ResMut<Assets<TextureAtlasLayout>>,
         mut textures: ResMut<Assets<Image>>,
     ) {
-        block_textures.finish_texture_atlases(
-            &asset_server,
-            &mut atlas_layouts,
-            &mut textures,
-        );
+        block_textures.finish_texture_atlases(&asset_server, &mut atlas_layouts, &mut textures);
     }
 }

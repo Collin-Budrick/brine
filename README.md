@@ -86,6 +86,33 @@ game development, including [`block-mesh`].
 logic of Minecraft into an API that greatly decouples the application logic from
 the implementation details of the backend.
 
+## Fetching Minecraft data and assets
+
+The client needs two ingredients that are not committed to this repository:
+
+1. `minecraft-data` JSON files from the [PrismarineJS] project, used by the
+   `minecraft-data-rs` crate.
+2. Vanilla Minecraft assets (`assets/`, `data/`, and `pack.mcmeta`) for the game
+   version you want to run.
+
+The `xtask` helper crate automates downloading both pieces.
+
+```text
+# Refresh the minecraft-data checkout used by the minecraft-data-rs crate.
+$ cargo xtask fetch-minecraft-data --reference master
+
+# Download assets for a particular version (will be stored in assets/<version>).
+$ cargo xtask fetch-assets --version 1.21.4
+
+# Or run both steps together. Use --force to re-download assets if the directory already exists.
+$ cargo xtask setup --version 1.21.4 --reference master
+```
+
+`fetch-assets` downloads the official Mojang client `.jar`, extracts only the
+`assets/` and `data/` trees (plus `pack.mcmeta`), and writes them into
+`assets/<version>`. Any version present in Mojang's manifest can be fetched this
+way, which keeps the client flexible as new releases come out.
+
 ## License
 
 This project is distributed under the terms of the MIT license.

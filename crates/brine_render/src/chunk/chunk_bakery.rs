@@ -1,8 +1,4 @@
-use bevy::{
-    asset::RenderAssetUsages,
-    prelude::Mesh,
-    render::render_resource::PrimitiveTopology,
-};
+use bevy::{asset::RenderAssetUsages, prelude::Mesh, render::render_resource::PrimitiveTopology};
 use bevy_mesh::Indices;
 
 use brine_asset::MinecraftAssets;

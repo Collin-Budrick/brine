@@ -207,10 +207,9 @@ mod protocol_discovery {
                 );
 
                 debug!("Sending StatusPing.");
-                let status_ping =
-                    Packet::Known(packet::Packet::StatusPing(Box::new(
-                        packet::status::serverbound::StatusPing::default(),
-                    )));
+                let status_ping = Packet::Known(packet::Packet::StatusPing(Box::new(
+                    packet::status::serverbound::StatusPing::default(),
+                )));
                 packet_writer.send(status_ping);
 
                 login_state.set(LoginState::StatusAwaitingDisconnect);
@@ -349,8 +348,7 @@ mod play {
     pub(crate) fn build(app: &mut App) {
         app.add_systems(
             Update,
-            (respond_to_keep_alive_packets, handle_disconnect)
-                .run_if(in_state(LoginState::Play)),
+            (respond_to_keep_alive_packets, handle_disconnect).run_if(in_state(LoginState::Play)),
         );
     }
 
