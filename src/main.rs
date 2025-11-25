@@ -32,6 +32,7 @@ use brine::{
     DEFAULT_LOG_FILTER,
 };
 
+const DEFAULT_PORT: &str = "25565";
 const SERVER: &str = "localhost:25565";
 const USERNAME: &str = "user";
 
@@ -86,7 +87,11 @@ fn main() {
         ));
     } else {
         app.add_plugins(ProtocolBackendPlugin);
-        let server = args.server.clone().unwrap_or_else(|| SERVER.to_string());
+        let server = args
+            .server
+            .as_deref()
+            .map(normalize_server_address)
+            .unwrap_or_else(|| SERVER.to_string());
         app.add_plugins(
             LoginPlugin::new(server, USERNAME.to_string()).exit_on_disconnect(),
         );
@@ -111,6 +116,23 @@ fn main() {
     }
 
     app.run();
+}
+
+fn normalize_server_address(server: &str) -> String {
+    let server = server.trim();
+    if needs_port(server) {
+        format!("{server}:{DEFAULT_PORT}")
+    } else {
+        server.to_string()
+    }
+}
+
+fn needs_port(server: &str) -> bool {
+    if server.starts_with('[') {
+        !server.contains("]:")
+    } else {
+        !server.contains(':')
+    }
 }
 
 #[derive(Default)]

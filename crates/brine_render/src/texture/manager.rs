@@ -86,7 +86,10 @@ impl TextureManager {
         let mut remaining_pending = Vec::new();
         let mut new_pending = Vec::new();
 
-        for pending_atlas in self.pending_atlases.drain(..) {
+        // Take ownership of the pending atlas list so we can borrow `self` again when
+        // registering completed atlases without tripping the borrow checker.
+        let pending = std::mem::take(&mut self.pending_atlases);
+        for pending_atlas in pending {
             if !pending_atlas.all_textures_loaded(textures) {
                 remaining_pending.push(pending_atlas);
                 continue;
