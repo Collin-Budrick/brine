@@ -4,12 +4,12 @@ version = "0.0.0"
 edition = "2021"
 
 [dependencies]
-async-channel = "1.6"
-async-codec = "0.4"
-async-net = "1.6"
-bevy = { version = "0.6", default-features = false }
-byteorder = "1"
-crossbeam-channel = "0.5"
-futures = "0.3"
-futures-lite = "1"
-thiserror = "1"
+async-channel = "2.5.0"
+async-codec = "0.4.1"
+async-net = "2.0.0"
+bevy = { version = "0.17.3", default-features = false }
+byteorder = "1.5.0"
+crossbeam-channel = "0.5.15"
+futures = "0.3.31"
+futures-lite = "2.6.1"
+thiserror = "2.0.17"

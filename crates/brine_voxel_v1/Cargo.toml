@@ -4,10 +4,10 @@ version = "0.0.0"
 edition = "2021"
 
 [dependencies]
-bevy = { version = "0.6" }
+bevy = { version = "0.17.3" }
 
-block-mesh = "0.1"
-futures-lite = "1"
+block-mesh = "0.2.0"
+futures-lite = "2.6.1"
 
 brine_asset = { path = "../brine_asset" }
 brine_chunk = { path = "../brine_chunk" }
