@@ -1,6 +1,6 @@
 use bevy::{
     asset::Asset,
-    image::TextureAtlasBuilder,
+    image::{TextureAtlasBuilder, TextureAtlasBuilderError},
     math::UVec2,
     prelude::*,
     reflect::TypePath,
@@ -41,7 +41,7 @@ impl TextureAtlas {
         textures: T,
         placeholder_texture: &Handle<Image>,
         max_texture_size: u32,
-    ) -> Self
+    ) -> Result<Self, TextureAtlasBuilderError>
     where
         T: IntoIterator<Item = (TextureKey, &'a Handle<Image>)>,
     {
@@ -62,7 +62,7 @@ impl TextureAtlas {
             assets.get(placeholder_texture).unwrap(),
         );
 
-        let (layout, sources, atlas_image) = builder.build().unwrap();
+        let (layout, sources, atlas_image) = builder.build()?;
         let atlas_size = layout.size.as_vec2();
         let atlas_handle = assets.add(atlas_image);
 
@@ -84,10 +84,34 @@ impl TextureAtlas {
             atlas_size.x as u32, atlas_size.y as u32
         );
 
-        Self {
+        Ok(Self {
             texture: atlas_handle,
             regions: key_to_uv,
             placeholder_region: placeholder_uv,
+        })
+    }
+
+    /// Build an atlas that maps the provided texture keys to the placeholder
+    /// texture. This is a defensive fallback when stitching fails and ensures
+    /// that every requested texture key is still routable.
+    pub fn placeholder_only<I>(
+        placeholder_texture: &Handle<Image>,
+        texture_keys: I,
+    ) -> Self
+    where
+        I: IntoIterator<Item = TextureKey>,
+    {
+        let mut regions = HashMap::new();
+        let placeholder_region = Rect::from_corners(Vec2::ZERO, Vec2::ONE);
+
+        for key in texture_keys.into_iter() {
+            regions.insert(key, placeholder_region);
+        }
+
+        Self {
+            texture: placeholder_texture.clone(),
+            regions,
+            placeholder_region,
         }
     }
 }
