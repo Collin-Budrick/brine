@@ -10,6 +10,8 @@ use serde_json::json;
 use tempfile::NamedTempFile;
 use zip::ZipArchive;
 
+mod protocol;
+
 const VERSION_MANIFEST_URL: &str =
     "https://piston-meta.mojang.com/mc/game/version_manifest_v2.json";
 const MINECRAFT_DATA_ZIP_URL: &str = "https://codeload.github.com/PrismarineJS/minecraft-data/zip";
@@ -51,6 +53,12 @@ enum Command {
         #[arg(long)]
         force: bool,
     },
+    /// Parse minecraft-data proto definitions into a packet index.
+    GenerateProtocol {
+        /// Minecraft version identifier (e.g., 1.21.4).
+        #[arg(long)]
+        version: String,
+    },
 }
 
 fn main() -> Result<()> {
@@ -66,6 +74,7 @@ fn main() -> Result<()> {
             fetch_minecraft_data(&reference)?;
             fetch_assets(&version, force)
         }
+        Command::GenerateProtocol { version } => generate_protocol(&version),
     }
 }
 
@@ -151,6 +160,46 @@ fn fetch_minecraft_data(reference: &str) -> Result<()> {
     println!("Extracting minecraft-data into {}", target.display());
     extract_repo_archive(temp_file.path(), &target)?;
     println!("minecraft-data refreshed from {reference}");
+    Ok(())
+}
+
+fn generate_protocol(version: &str) -> Result<()> {
+    let root = workspace_root();
+    let proto_dir = root
+        .join("third_party")
+        .join("minecraft-data-rs")
+        .join("minecraft-data")
+        .join("data")
+        .join("pc")
+        .join(version);
+    let proto_path = proto_dir.join("protocol.json");
+    if !proto_path.exists() {
+        bail!(
+            "missing {}, run `cargo xtask fetch-minecraft-data` first",
+            proto_path.display()
+        );
+    }
+
+    let protocol_version = lookup_protocol_version(&root, version)?;
+    let index = protocol::build_packet_index(&proto_path, version, protocol_version)?;
+    let out_dir = root
+        .join("target")
+        .join("generated")
+        .join("protocol")
+        .join(version);
+    fs::create_dir_all(&out_dir)?;
+    let out_path = out_dir.join("packet_index.json");
+    fs::write(&out_path, serde_json::to_string_pretty(&index)?)?;
+    let stevenarella_dir = out_dir.join("stevenarella");
+    let versions_dir = stevenarella_dir.join("versions");
+    let version_table_path = protocol::write_version_table(&index, &versions_dir)?;
+    let packet_stub_path = protocol::write_state_packets_stub(&index, &stevenarella_dir)?;
+    println!(
+        "Packet index for {version} (protocol {protocol_version}) written to {}\nVersion table written to {}\nPacket stub written to {}",
+        out_path.display(),
+        version_table_path.display(),
+        packet_stub_path.display()
+    );
     Ok(())
 }
 
@@ -281,6 +330,33 @@ struct PackVersion {
     resource: u32,
     #[allow(unused)]
     data: u32,
+}
+
+#[derive(Deserialize)]
+struct ProtocolVersionRecord {
+    #[serde(rename = "minecraftVersion")]
+    minecraft_version: String,
+    version: i32,
+}
+
+fn lookup_protocol_version(root: &Path, minecraft_version: &str) -> Result<i32> {
+    let path = root
+        .join("third_party")
+        .join("minecraft-data-rs")
+        .join("minecraft-data")
+        .join("data")
+        .join("pc")
+        .join("common")
+        .join("protocolVersions.json");
+    let data =
+        fs::read_to_string(&path).with_context(|| format!("failed to read {}", path.display()))?;
+    let records: Vec<ProtocolVersionRecord> = serde_json::from_str(&data)
+        .with_context(|| format!("failed to parse {}", path.display()))?;
+    records
+        .into_iter()
+        .find(|record| record.minecraft_version == minecraft_version)
+        .map(|record| record.version)
+        .ok_or_else(|| anyhow!("protocol version for {minecraft_version} not found"))
 }
 
 fn ensure_pack_metadata(

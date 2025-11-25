@@ -309,33 +309,33 @@ pub mod multipart {
         ///
         /// The slice will contain one element for a [`Single`][Self::Single]
         /// variant, and multiple for an [`Or`][Self::Or] variant.
-    pub fn conditions(&self) -> &[Condition] {
-        match self {
-            Self::Single(condition) => std::slice::from_ref(condition),
-            Self::Or { or } => &or[..],
-            Self::And { and } => &and[..],
+        pub fn conditions(&self) -> &[Condition] {
+            match self {
+                Self::Single(condition) => std::slice::from_ref(condition),
+                Self::Or { or } => &or[..],
+                Self::And { and } => &and[..],
+            }
         }
-    }
 
         /// Returns `true` if any of the conditions specified by this `when`
         /// clause are satisfied by the provided state values.
         ///
         /// See [`Condition::applies`].
-    pub fn applies<'a, I>(&self, state_values: I) -> bool
-    where
-        I: IntoIterator<Item = (&'a str, &'a StateValue)> + Clone,
-    {
-        match self {
-            Self::Single(_) | Self::Or { .. } => self
-                .conditions()
-                .iter()
-                .any(|condition| condition.applies(state_values.clone())),
-            Self::And { .. } => self
-                .conditions()
-                .iter()
-                .all(|condition| condition.applies(state_values.clone())),
+        pub fn applies<'a, I>(&self, state_values: I) -> bool
+        where
+            I: IntoIterator<Item = (&'a str, &'a StateValue)> + Clone,
+        {
+            match self {
+                Self::Single(_) | Self::Or { .. } => self
+                    .conditions()
+                    .iter()
+                    .any(|condition| condition.applies(state_values.clone())),
+                Self::And { .. } => self
+                    .conditions()
+                    .iter()
+                    .all(|condition| condition.applies(state_values.clone())),
+            }
         }
-    }
     }
 
     /// A set of conditions that **all** have to match the block to return true.
