@@ -3,14 +3,7 @@
 use std::{any::Any, fmt::Debug, marker::PhantomData};
 
 use async_codec::{Decode, Encode};
-use bevy::{
-    app::{App, CoreStage, Plugin},
-    ecs::{
-        event::{EventWriter, Events},
-        system::{Res, ResMut},
-    },
-    tasks::IoTaskPool,
-};
+use bevy::{prelude::*, tasks::TaskPool};
 
 use crate::{
     event::NetworkEvent,
@@ -21,8 +14,8 @@ use crate::{
 pub type CodecReader<'w, 's, Codec> =
     system_param::CodecReader<'w, 's, <Codec as Decode>::Item, Codec>;
 
-pub type CodecWriter<'w, 's, Codec> =
-    system_param::CodecWriter<'w, 's, <Codec as Encode>::Item, Codec>;
+pub type CodecWriter<'w, Codec> =
+    system_param::CodecWriter<'w, <Codec as Encode>::Item, Codec>;
 
 /// Plugin that implements the provided network codec.
 ///
@@ -86,20 +79,17 @@ where
     <Codec as Encode>::Error: Debug + Send + Sync,
 {
     fn build(&self, app: &mut App) {
-        app.add_event::<NetworkEvent<Codec>>();
-        app.add_event::<CodecReadEvent<Codec>>();
-        app.add_event::<CodecWriteEvent<Codec>>();
+        app.add_message::<NetworkEvent<Codec>>();
+        app.add_message::<CodecReadEvent<Codec>>();
+        app.add_message::<CodecWriteEvent<Codec>>();
 
-        let task_pool = app.world.get_resource::<IoTaskPool>().unwrap().clone();
-        let net_resource = NetworkResource::<Codec>::new(task_pool.0);
+        let task_pool = TaskPool::default();
+        let net_resource = NetworkResource::<Codec>::new(task_pool);
         app.insert_resource(net_resource);
 
-        app.add_system_to_stage(CoreStage::PreUpdate, Self::send_network_events);
-        app.add_system_to_stage(CoreStage::PreUpdate, Self::send_packets_to_codec_reader);
-        app.add_system_to_stage(
-            CoreStage::PostUpdate,
-            Self::receive_packets_from_codec_writer,
-        );
+        app.add_systems(PreUpdate, Self::send_network_events);
+        app.add_systems(PreUpdate, Self::send_packets_to_codec_reader);
+        app.add_systems(PostUpdate, Self::receive_packets_from_codec_writer);
     }
 }
 
@@ -116,7 +106,7 @@ where
     /// appropriate [`EventReader`][bevy::ecs::event::EventReader].
     fn send_network_events(
         mut net_resource: ResMut<NetworkResource<Codec>>,
-        mut event_writer: EventWriter<NetworkEvent<Codec>>,
+        mut event_writer: MessageWriter<NetworkEvent<Codec>>,
     ) {
         while let Ok(event) = net_resource.network_event_receiver.try_recv() {
             // Clear the connection task if the connection has terminated,
@@ -125,7 +115,7 @@ where
                 net_resource.connection_task = None;
             }
 
-            event_writer.send(event);
+            event_writer.write(event);
         }
     }
 
@@ -134,10 +124,10 @@ where
     /// appropriate [`CodecReader`].
     fn send_packets_to_codec_reader(
         net_resource: Res<NetworkResource<Codec>>,
-        mut event_writer: EventWriter<CodecReadEvent<Codec>>,
+        mut event_writer: MessageWriter<CodecReadEvent<Codec>>,
     ) {
         while let Ok(packet) = net_resource.selfbound_packet_receiver.try_recv() {
-            event_writer.send(Read(packet, PhantomData));
+            event_writer.write(Read(packet, PhantomData));
         }
     }
 
@@ -146,11 +136,11 @@ where
     /// remote host.
     fn receive_packets_from_codec_writer(
         net_resource: Res<NetworkResource<Codec>>,
-        mut events: ResMut<Events<CodecWriteEvent<Codec>>>,
+        mut messages: ResMut<Messages<CodecWriteEvent<Codec>>>,
     ) {
         net_resource.task_pool.scope(|scope| {
             scope.spawn(async {
-                for packet in events.drain() {
+                for packet in messages.drain() {
                     net_resource
                         .peerbound_packet_sender
                         .send(packet.0)

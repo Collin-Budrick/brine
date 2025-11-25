@@ -3,7 +3,7 @@ use std::{any::Any, marker::PhantomData};
 
 use bevy::tasks::Task;
 use bevy::utils::{HashMap, HashSet};
-use bevy::{ecs::event::Events, prelude::*, tasks::AsyncComputeTaskPool};
+use bevy::{prelude::*, tasks::AsyncComputeTaskPool};
 use futures_lite::future;
 
 use brine_asset::{api::BlockFace, MinecraftAssets};
@@ -43,10 +43,10 @@ pub struct ChunkBuilderPlugin<T: ChunkBuilder> {
 impl<T: ChunkBuilder> ChunkBuilderPlugin<T> {
     /// For (potentially premature) performance reasons, the default behavior of
     /// the [`ChunkBuilderPlugin`] is to consume `ChunkData` events (i.e.,
-    /// [`Events::drain()`]) so they can be moved into the builder task rather
+    /// [`Messages::drain()`]) so they can be moved into the builder task rather
     /// than cloned.
     ///
-    /// [`Events::drain()`]: bevy::ecs::event::Events::drain
+    /// [`Messages::drain()`]: bevy::prelude::Messages::drain
     ///
     /// This constructor allows multiple chunk builder plugins to exist
     /// simultaneously without them clobbering each other. It forces the plugin
@@ -73,19 +73,20 @@ where
     T: ChunkBuilder + Default + Send + Sync + 'static,
 {
     fn build(&self, app: &mut App) {
-        let mut systems = SystemSet::new();
-
-        systems = if self.shared {
-            systems.with_system(Self::builder_task_spawn_shared.label(System::BuilderTaskSpawn))
+        let builder_system = if self.shared {
+            Self::builder_task_spawn_shared.label(System::BuilderTaskSpawn)
         } else {
-            systems.with_system(Self::builder_task_spawn_unique.label(System::BuilderTaskSpawn))
+            Self::builder_task_spawn_unique.label(System::BuilderTaskSpawn)
         };
 
-        systems = systems
-            .with_system(Self::receive_built_meshes)
-            .with_system(Self::add_built_chunks_to_world.label(System::BuilderResultAddToWorld));
-
-        app.add_system_set(systems);
+        app.add_systems(
+            Update,
+            (
+                builder_system,
+                Self::receive_built_meshes,
+                Self::add_built_chunks_to_world.label(System::BuilderResultAddToWorld),
+            ),
+        );
     }
 }
 
@@ -248,7 +249,7 @@ where
     */
 
     fn builder_task_spawn_unique(
-        mut chunk_events: ResMut<Events<event::clientbound::ChunkData>>,
+        mut chunk_events: ResMut<Messages<event::clientbound::ChunkData>>,
         mut commands: Commands,
         task_pool: Res<AsyncComputeTaskPool>,
     ) {
@@ -262,7 +263,7 @@ where
         mut commands: Commands,
         task_pool: Res<AsyncComputeTaskPool>,
     ) {
-        for chunk_event in chunk_events.iter() {
+        for chunk_event in chunk_events.read() {
             Self::builder_task_spawn(chunk_event.clone(), &mut commands, &task_pool);
         }
     }

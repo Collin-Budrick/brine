@@ -1,6 +1,7 @@
-use bevy::render::{
-    mesh::{Indices, Mesh},
-    render_resource::PrimitiveTopology,
+use bevy::{
+    asset::RenderAssetUsages,
+    prelude::Mesh,
+    render::{mesh::indices::Indices, render_resource::PrimitiveTopology},
 };
 
 use brine_asset::MinecraftAssets;
@@ -18,7 +19,10 @@ pub struct BakedChunk {
 impl Default for BakedChunk {
     fn default() -> Self {
         Self {
-            mesh: Mesh::new(PrimitiveTopology::TriangleList),
+            mesh: Mesh::new(
+                PrimitiveTopology::TriangleList,
+                RenderAssetUsages::default(),
+            ),
         }
     }
 }
@@ -64,7 +68,10 @@ pub fn build_bevy_mesh(voxel_mesh: &VoxelMesh) -> Mesh {
         tex_coords.extend_from_slice(&quad.get_tex_coords());
     }
 
-    let mut mesh = Mesh::new(PrimitiveTopology::TriangleList);
+    let mut mesh = Mesh::new(
+        PrimitiveTopology::TriangleList,
+        RenderAssetUsages::default(),
+    );
     mesh.insert_attribute(Mesh::ATTRIBUTE_POSITION, positions);
     mesh.insert_attribute(Mesh::ATTRIBUTE_NORMAL, normals);
     mesh.insert_attribute(Mesh::ATTRIBUTE_UV_0, tex_coords);

@@ -5,6 +5,7 @@ edition = "2021"
 
 [dependencies]
 bevy = { version = "0.17.3", default-features = false }
+bevy_ecs = "0.17.3"
 uuid = "1.18.1"
 
 brine_chunk = { path = "../brine_chunk" }

@@ -7,7 +7,11 @@ use bevy::{
     log::{Level, LogPlugin},
     pbr::wireframe::{WireframeConfig, WireframePlugin},
     prelude::*,
-    render::{options::WgpuOptions, render_resource::WgpuFeatures},
+    render::{
+        render_resource::WgpuFeatures,
+        settings::{RenderCreation, WgpuSettings},
+        RenderPlugin,
+    },
 };
 use bevy_inspector_egui::WorldInspectorPlugin;
 
@@ -105,7 +109,7 @@ impl Chunks {
             ..Chunk::empty(self.chunk().chunk_x, self.chunk().chunk_z)
         };
 
-        chunk_events.send(event::clientbound::ChunkData {
+        chunk_events.write(event::clientbound::ChunkData {
             chunk_data: single_section_chunk,
         });
     }
@@ -116,14 +120,20 @@ const DISTANCE_FROM_ORIGIN: f32 = 13.0;
 pub fn main(args: Args) {
     let mut app = App::new();
 
-    app.insert_resource(WgpuOptions {
-        features: WgpuFeatures::POLYGON_MODE_LINE,
-        ..Default::default()
-    })
-    .add_plugins(DefaultPlugins.set(LogPlugin {
-        level: Level::DEBUG,
-        filter: String::from(DEFAULT_LOG_FILTER),
-    }))
+    app.add_plugins(
+        DefaultPlugins
+            .set(LogPlugin {
+                level: Level::DEBUG,
+                filter: String::from(DEFAULT_LOG_FILTER),
+            })
+            .set(RenderPlugin {
+                render_creation: RenderCreation::Automatic(WgpuSettings {
+                    features: WgpuFeatures::POLYGON_MODE_LINE,
+                    ..default()
+                }),
+                ..default()
+            }),
+    )
     .insert_resource(Msaa { samples: 4 })
     .insert_resource(WireframeConfig { global: true })
     .add_plugins((WireframePlugin, WorldInspectorPlugin::new(), ProtocolPlugin));

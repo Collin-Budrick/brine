@@ -1,4 +1,5 @@
-use bevy::{asset::HandleId, prelude::*, render::options::WgpuOptions, utils::HashMap};
+use bevy::{prelude::*, render::renderer::RenderDevice};
+use std::collections::HashMap;
 
 use brine_asset::TextureKey;
 
@@ -6,7 +7,7 @@ use crate::texture::{PendingAtlas, TextureAtlas};
 
 const PLACEHOLDER_PATH: &str = "placeholder.png";
 
-#[derive(Debug)]
+#[derive(Debug, Resource)]
 pub struct TextureManager {
     /// Strong handle to a placeholder texture.
     placeholder_texture: Handle<Image>,
@@ -51,7 +52,7 @@ impl TextureManager {
     /// The textures need not be loaded at the time of calling this method.
     pub fn create_atlas<T>(
         &mut self,
-        asset_server: &AssetServer,
+        atlases: &Assets<TextureAtlas>,
         textures: T,
     ) -> Handle<TextureAtlas>
     where
@@ -61,13 +62,9 @@ impl TextureManager {
 
         debug!("Texture atlas requested for {} textures", textures.len());
 
-        let handle_id = HandleId::random::<TextureAtlas>();
-        let handle = asset_server.get_handle(handle_id);
+        let handle = atlases.reserve_handle();
 
-        let pending_atlas = PendingAtlas {
-            handle: handle.clone(),
-            textures,
-        };
+        let pending_atlas = PendingAtlas { handle: handle.clone(), textures };
         self.pending_atlases.push(pending_atlas);
 
         handle
@@ -106,7 +103,7 @@ impl TextureManager {
                     self.key_to_atlas.insert(*texture_key, index);
                 }
 
-                atlases.set_untracked(&atlas_handle, atlas);
+                atlases.insert(atlas_handle.id(), atlas).unwrap();
                 self.atlases.push(atlas_handle);
             }
 
@@ -121,8 +118,10 @@ impl FromWorld for TextureManager {
         let asset_server = world.get_resource::<AssetServer>().unwrap();
         let placeholder_texture = asset_server.load(PLACEHOLDER_PATH);
 
-        let wgpu_limits = &world.get_resource::<WgpuOptions>().unwrap().limits;
-        let max_texture_size = wgpu_limits.max_texture_dimension_2d;
+        let max_texture_size = world
+            .get_resource::<RenderDevice>()
+            .map(|device| device.limits().max_texture_dimension_2d)
+            .unwrap_or(4096);
 
         Self::new(placeholder_texture, max_texture_size)
     }
@@ -133,8 +132,8 @@ pub struct TextureManagerPlugin;
 impl Plugin for TextureManagerPlugin {
     fn build(&self, app: &mut App) {
         app.init_resource::<TextureManager>();
-        app.add_asset::<TextureAtlas>();
-        app.add_system(stitch_pending_atlases);
+        app.init_asset::<TextureAtlas>();
+        app.add_systems(Update, stitch_pending_atlases);
     }
 }
 

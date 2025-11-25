@@ -1,6 +1,6 @@
 use std::{cmp::Ordering, fmt};
 
-use glam::{const_vec3a, Affine3A, Vec3A};
+use glam::{Affine3A, Vec3A};
 use minecraft_assets::schemas::models::{Axis, BlockFace, ElementRotation};
 
 use crate::bakery::models::BakedQuad;
@@ -110,12 +110,12 @@ impl Cuboid {
     #[inline(always)]
     pub const fn get_normal(face: BlockFace) -> Vec3A {
         match face {
-            BlockFace::Down => const_vec3a!([0.0, -1.0, 0.0]),
-            BlockFace::Up => const_vec3a!([0.0, 1.0, 0.0]),
-            BlockFace::North => const_vec3a!([0.0, 0.0, -1.0]),
-            BlockFace::South => const_vec3a!([0.0, 0.0, 1.0]),
-            BlockFace::West => const_vec3a!([-1.0, 0.0, 0.0]),
-            BlockFace::East => const_vec3a!([1.0, 0.0, 0.0]),
+            BlockFace::Down => Vec3A::new(0.0, -1.0, 0.0),
+            BlockFace::Up => Vec3A::new(0.0, 1.0, 0.0),
+            BlockFace::North => Vec3A::new(0.0, 0.0, -1.0),
+            BlockFace::South => Vec3A::new(0.0, 0.0, 1.0),
+            BlockFace::West => Vec3A::new(-1.0, 0.0, 0.0),
+            BlockFace::East => Vec3A::new(1.0, 0.0, 0.0),
         }
     }
 

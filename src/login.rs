@@ -5,8 +5,9 @@ use brine_proto::event::{
     serverbound::Login,
 };
 
-#[derive(Debug, Clone, Eq, PartialEq, Hash)]
+#[derive(Debug, Clone, Eq, PartialEq, Hash, States, Default)]
 pub enum GameState {
+    #[default]
     Idle,
     Login,
     Play,
@@ -44,52 +45,51 @@ impl LoginPlugin {
 impl Plugin for LoginPlugin {
     fn build(&self, app: &mut App) {
         app.insert_resource(self.info.clone())
-            .add_state(GameState::Idle)
-            .add_startup_system(initiate_login)
-            .add_system_set(
-                SystemSet::on_update(GameState::Login)
-                    .with_system(await_success)
-                    .with_system(handle_disconnect),
+            .init_state::<GameState>()
+            .add_systems(Startup, initiate_login)
+            .add_systems(
+                OnUpdate(GameState::Login),
+                (await_success, handle_disconnect),
             )
-            .add_system_set(SystemSet::on_update(GameState::Play).with_system(handle_disconnect));
+            .add_systems(OnUpdate(GameState::Play), handle_disconnect);
     }
 }
 
 fn initiate_login(
     login_info: Res<LoginInfo>,
     mut login_events: EventWriter<Login>,
-    mut app_state: ResMut<State<GameState>>,
+    mut next_state: ResMut<NextState<GameState>>,
 ) {
     info!("Initiating login");
-    login_events.send(Login {
+    login_events.write(Login {
         server: login_info.server.clone(),
         username: login_info.username.clone(),
     });
-    app_state.set(GameState::Login).unwrap();
+    next_state.set(GameState::Login);
 }
 
 fn await_success(
     mut login_success_events: EventReader<LoginSuccess>,
-    mut app_state: ResMut<State<GameState>>,
+    mut next_state: ResMut<NextState<GameState>>,
 ) {
-    if login_success_events.iter().last().is_some() {
+    if login_success_events.read().last().is_some() {
         info!("Login successful, advancing to state Play");
-        app_state.set(GameState::Play).unwrap();
+        next_state.set(GameState::Play);
     }
 }
 
 fn handle_disconnect(
     login_info: Res<LoginInfo>,
     mut disconnect_events: EventReader<Disconnect>,
-    mut app_state: ResMut<State<GameState>>,
+    mut next_state: ResMut<NextState<GameState>>,
     mut app_exit: EventWriter<AppExit>,
 ) {
-    if let Some(disconnect) = disconnect_events.iter().last() {
+    if let Some(disconnect) = disconnect_events.read().last() {
         info!("Disconnected from server. Reason: {}", disconnect.reason);
-        app_state.set(GameState::Idle).unwrap();
+        next_state.set(GameState::Idle);
 
         if login_info.exit_on_disconnect {
-            app_exit.send(AppExit);
+            app_exit.write(AppExit);
         }
     }
 }

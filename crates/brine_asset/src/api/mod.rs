@@ -7,6 +7,7 @@ use std::{
 
 use minecraft_assets::api::{AssetPack, ResourcePath};
 use tracing::*;
+use bevy_ecs::prelude::Resource;
 
 pub use minecraft_assets::{api::Result, schemas::models::BlockFace};
 
@@ -28,7 +29,7 @@ use crate::bakery::{
 /// This type is intended to be initialized once at program startup and accessed
 /// by reference thereafter. Construction is **not** an inexpensive operation,
 /// but access **is** an inexpensive operation.
-#[derive(Clone)]
+#[derive(Clone, Resource)]
 pub struct MinecraftAssets {
     inner: Arc<MinecraftAssetsInner>,
 }

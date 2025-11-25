@@ -55,9 +55,9 @@ fn handle_disconnect(
     mut disconnect_events: EventReader<Disconnect>,
     mut app_exit: EventWriter<AppExit>,
 ) {
-    if let Some(disconnect) = disconnect_events.iter().last() {
+    if let Some(disconnect) = disconnect_events.read().last() {
         println!("Disconnected from server. Reason: {}", disconnect.reason);
-        app_exit.send(AppExit);
+        app_exit.write(AppExit);
     }
 }
 
@@ -82,7 +82,7 @@ fn receive_chunks(
         if let Some(limit) = args.limit {
             if *chunks_saved >= limit {
                 println!("Limit reached, terminating.");
-                app_exit.send(AppExit);
+                app_exit.write(AppExit);
                 break;
             }
         }

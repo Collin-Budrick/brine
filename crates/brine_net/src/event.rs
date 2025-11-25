@@ -3,6 +3,7 @@
 use std::{fmt::Debug, io};
 
 use async_codec::{Decode, Encode};
+use bevy::prelude::Message;
 
 #[derive(Debug)]
 pub enum NetworkEvent<Codec: Decode + Encode>
@@ -13,6 +14,16 @@ where
     Connected,
     Disconnected,
     Error(NetworkError<Codec>),
+}
+
+impl<Codec> Message for NetworkEvent<Codec>
+where
+    Codec: Decode + Encode + Send + Sync + 'static,
+    <Codec as Decode>::Item: Send + Sync + 'static,
+    <Codec as Encode>::Item: Send + Sync + 'static,
+    <Codec as Decode>::Error: Debug + Send + Sync + 'static,
+    <Codec as Encode>::Error: Debug + Send + Sync + 'static,
+{
 }
 
 #[derive(Debug, thiserror::Error)]

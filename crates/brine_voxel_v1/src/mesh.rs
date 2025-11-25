@@ -1,12 +1,10 @@
 use std::ops::Add;
 
 use bevy::{
+    asset::RenderAssetUsages,
     ecs::component::Component,
     prelude::*,
-    render::{
-        mesh::{Indices, Mesh},
-        render_resource::PrimitiveTopology,
-    },
+    render::{mesh::indices::Indices, render_resource::PrimitiveTopology},
     sprite::TextureAtlas,
 };
 use brine_asset::BlockFace;
@@ -100,7 +98,10 @@ impl VoxelMesh {
             normals.extend_from_slice(&[normal; 4]);
         }
 
-        let mut mesh = Mesh::new(PrimitiveTopology::TriangleList);
+        let mut mesh = Mesh::new(
+            PrimitiveTopology::TriangleList,
+            RenderAssetUsages::default(),
+        );
 
         let indices = self.get_indices::<u32>();
 

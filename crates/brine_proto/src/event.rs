@@ -15,6 +15,7 @@ pub mod serverbound {
 
     #[allow(unused)]
     use super::clientbound;
+    use bevy_ecs::prelude::Message;
 
     /// Initiates login for the given user on the given server.
     ///
@@ -24,7 +25,7 @@ pub mod serverbound {
     ///
     /// * [`clientbound::LoginSuccess`]
     /// * [`clientbound::Disconnect`]
-    #[derive(Debug, Clone, PartialEq)]
+    #[derive(Debug, Clone, PartialEq, Message)]
     pub struct Login {
         /// Hostname or IP address of the server.
         pub server: String,
@@ -34,7 +35,7 @@ pub mod serverbound {
     }
 
     pub(crate) fn add_events(app: &mut bevy::app::App) {
-        app.add_event::<Login>();
+        app.add_message::<Login>();
     }
 }
 
@@ -43,13 +44,14 @@ pub mod clientbound {
 
     #[allow(unused)]
     use super::serverbound;
+    use bevy_ecs::prelude::Message;
 
     /// Notifies the client that they have successfully logged in to the server.
     ///
     /// # See also
     ///
     /// * [`serverbound::Login`]
-    #[derive(Debug, Clone, PartialEq)]
+    #[derive(Debug, Clone, PartialEq, Message)]
     pub struct LoginSuccess {
         /// UUID assigned by the server to this client.
         pub uuid: uuid::Uuid,
@@ -66,21 +68,21 @@ pub mod clientbound {
     /// * Backend fails to keep the connection alive.
     /// * Generic networking error.
     /// * etc...
-    #[derive(Debug, Clone, PartialEq)]
+    #[derive(Debug, Clone, PartialEq, Message)]
     pub struct Disconnect {
         /// Human-readable reason for why the disconnect occurred.
         pub reason: String,
     }
 
     /// Contains data relating to a 16x256x16 chunk of the Minecraft world.
-    #[derive(Debug, Clone, PartialEq)]
+    #[derive(Debug, Clone, PartialEq, Message)]
     pub struct ChunkData {
         pub chunk_data: brine_chunk::Chunk,
     }
 
     pub(crate) fn add_events(app: &mut bevy::app::App) {
-        app.add_event::<LoginSuccess>();
-        app.add_event::<Disconnect>();
-        app.add_event::<ChunkData>();
+        app.add_message::<LoginSuccess>();
+        app.add_message::<Disconnect>();
+        app.add_message::<ChunkData>();
     }
 }

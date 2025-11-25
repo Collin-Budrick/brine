@@ -2,7 +2,7 @@
 
 use bevy::{
     prelude::*,
-    render::mesh::{Indices, VertexAttributeValues},
+    render::mesh::{indices::Indices, vertex::VertexAttributeValues},
 };
 
 use brine_chunk::{BlockState, Chunk, ChunkSection};

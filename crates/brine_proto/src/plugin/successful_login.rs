@@ -1,4 +1,4 @@
-use bevy::prelude::*;
+use bevy::{ecs::schedule::IntoScheduleConfigs, prelude::*};
 
 use crate::event::{clientbound::LoginSuccess, serverbound::Login, Uuid};
 
@@ -25,27 +25,28 @@ pub struct AlwaysSuccessfulLoginPlugin;
 
 impl Plugin for AlwaysSuccessfulLoginPlugin {
     fn build(&self, app: &mut App) {
-        app.add_state(ServerState::Login);
-        app.add_system_set(SystemSet::on_update(ServerState::Login).with_system(handle_login));
+        app.init_state::<ServerState>();
+        app.add_systems(Update, handle_login.run_if(in_state(ServerState::Login)));
     }
 }
 
-#[derive(Debug, Copy, Clone, Eq, PartialEq, Hash)]
+#[derive(Debug, Copy, Clone, Eq, PartialEq, Hash, States, Default)]
 enum ServerState {
+    #[default]
     Login,
     Play,
 }
 
 fn handle_login(
-    mut state: ResMut<State<ServerState>>,
-    mut rx: EventReader<Login>,
-    mut tx: EventWriter<LoginSuccess>,
+    mut next_state: ResMut<NextState<ServerState>>,
+    mut rx: MessageReader<Login>,
+    mut tx: MessageWriter<LoginSuccess>,
 ) {
-    if let Some(login) = rx.iter().last() {
+    if let Some(login) = rx.read().last() {
         debug!("Dummy server advancing to state Play");
-        state.set(ServerState::Play).unwrap();
+        next_state.set(ServerState::Play);
 
-        tx.send(LoginSuccess {
+        tx.write(LoginSuccess {
             uuid: Uuid::new_v4(),
             username: login.username.clone(),
         });

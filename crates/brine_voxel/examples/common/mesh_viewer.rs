@@ -1,8 +1,9 @@
 use bevy::{
+    asset::RenderAssetUsages,
     pbr::wireframe::{WireframeConfig, WireframePlugin},
     prelude::*,
     render::{
-        mesh::Indices,
+        mesh::indices::Indices,
         options::WgpuOptions,
         render_resource::{PrimitiveTopology, WgpuFeatures},
     },
@@ -114,7 +115,10 @@ pub fn build_bevy_mesh(voxel_mesh: &VoxelMesh) -> Mesh {
         tex_coords.extend_from_slice(&quad.get_tex_coords());
     }
 
-    let mut mesh = Mesh::new(PrimitiveTopology::TriangleList);
+    let mut mesh = Mesh::new(
+        PrimitiveTopology::TriangleList,
+        RenderAssetUsages::default(),
+    );
     mesh.insert_attribute(Mesh::ATTRIBUTE_POSITION, positions);
     mesh.insert_attribute(Mesh::ATTRIBUTE_NORMAL, normals);
     mesh.insert_attribute(Mesh::ATTRIBUTE_UV_0, tex_coords);

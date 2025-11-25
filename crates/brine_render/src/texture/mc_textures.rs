@@ -4,8 +4,9 @@ use brine_asset::{MinecraftAssets, TextureKey};
 
 use crate::texture::{TextureAtlas, TextureManager};
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, States, Default)]
 pub enum MinecraftTexturesState {
+    #[default]
     Loading,
     Loaded,
 }
@@ -14,17 +15,17 @@ pub struct MinecraftTexturesPlugin;
 
 impl Plugin for MinecraftTexturesPlugin {
     fn build(&self, app: &mut App) {
-        app.add_state(MinecraftTexturesState::Loading);
+        app.init_state::<MinecraftTexturesState>();
         app.init_resource::<TheAtlas>();
-        // app.add_startup_system(setup);
-        app.add_system_set(SystemSet::on_enter(MinecraftTexturesState::Loading).with_system(setup));
-        app.add_system_set(
-            SystemSet::on_update(MinecraftTexturesState::Loading).with_system(await_loaded),
+        app.add_systems(OnEnter(MinecraftTexturesState::Loading), setup);
+        app.add_systems(
+            Update,
+            await_loaded.run_if(in_state(MinecraftTexturesState::Loading)),
         );
     }
 }
 
-#[derive(Default)]
+#[derive(Resource, Default)]
 struct TheAtlas {
     handle: Handle<TextureAtlas>,
 }
@@ -59,12 +60,13 @@ fn get_all_textures<'a>(
 fn setup(
     mc_assets: Res<MinecraftAssets>,
     asset_server: Res<AssetServer>,
+    atlases: Res<Assets<TextureAtlas>>,
     mut the_atlas: ResMut<TheAtlas>,
     mut texture_manager: ResMut<TextureManager>,
 ) {
     let textures = get_all_textures(&*mc_assets, &*asset_server);
 
-    let atlas_handle = texture_manager.create_atlas(&*asset_server, textures);
+    let atlas_handle = texture_manager.create_atlas(&*atlases, textures);
     the_atlas.handle = atlas_handle;
 }
 
@@ -72,9 +74,9 @@ fn setup(
 fn await_loaded(
     the_atlas: Res<TheAtlas>,
     atlases: Res<Assets<TextureAtlas>>,
-    mut state: ResMut<State<MinecraftTexturesState>>,
+    mut next_state: ResMut<NextState<MinecraftTexturesState>>,
 ) {
     if atlases.contains(&the_atlas.handle) {
-        state.set(MinecraftTexturesState::Loaded).unwrap();
+        next_state.set(MinecraftTexturesState::Loaded);
     }
 }

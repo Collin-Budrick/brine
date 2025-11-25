@@ -10,6 +10,8 @@ use std::{
     },
 };
 
+use bevy::prelude::Resource;
+
 use brine_net::{DecodeResult, EncodeResult};
 
 use crate::version::get_protocol_version;
@@ -35,6 +37,7 @@ pub enum MinecraftProtocolState {
 }
 
 /// Thin wrapper around some concrete implementation of the Minecraft protocol.
+#[derive(Resource)]
 pub struct MinecraftClientCodec<Backend> {
     /// See note in [`brine_net`] docs to see why this needs to be an Arc.
     state: Arc<CodecState>,

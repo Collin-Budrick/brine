@@ -6,6 +6,11 @@ use bevy::{
     diagnostic::{FrameTimeDiagnosticsPlugin, LogDiagnosticsPlugin},
     log::{Level, LogPlugin},
     prelude::*,
+    render::{
+        render_resource::WgpuFeatures,
+        settings::{RenderCreation, WgpuSettings},
+        RenderPlugin,
+    },
 };
 use bevy_fly_camera::{FlyCamera, FlyCameraPlugin};
 use bevy_inspector_egui::prelude::*;
@@ -53,10 +58,22 @@ fn main() {
     let mut app = App::new();
 
     // Default plugins.
-    app.add_plugins(DefaultPlugins.set(LogPlugin {
+    let mut default_plugins = DefaultPlugins.set(LogPlugin {
         level: Level::DEBUG,
         filter: String::from(DEFAULT_LOG_FILTER),
-    }));
+    });
+
+    if args.debug {
+        default_plugins = default_plugins.set(RenderPlugin {
+            render_creation: RenderCreation::Automatic(WgpuSettings {
+                features: WgpuFeatures::POLYGON_MODE_LINE,
+                ..default()
+            }),
+            ..default()
+        });
+    }
+
+    app.add_plugins(default_plugins);
 
     // Brine-specific plugins.
 

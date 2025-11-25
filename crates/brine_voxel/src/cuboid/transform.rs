@@ -130,8 +130,6 @@ impl Mul<Cuboid> for CuboidTransform {
 mod tests {
     use std::fmt;
 
-    use glam::const_vec3a;
-
     use crate::Direction;
 
     use super::*;
@@ -161,7 +159,7 @@ mod tests {
     }
 
     const EPS_F32: f32 = 0.00001;
-    const EPS_VEC3A: Vec3A = const_vec3a!([EPS_F32, EPS_F32, EPS_F32]);
+    const EPS_VEC3A: Vec3A = Vec3A::new(EPS_F32, EPS_F32, EPS_F32);
 
     fn assert_eq_epsilon<T, U, E>(lhs: T, rhs: U, eps: E)
     where

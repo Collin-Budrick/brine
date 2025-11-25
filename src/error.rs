@@ -15,6 +15,6 @@ pub fn exit_on_error<T, E: fmt::Display>(
 ) {
     if let Err(e) = result {
         error!("{}", e);
-        app_exit.send(AppExit);
+        app_exit.write(AppExit);
     }
 }

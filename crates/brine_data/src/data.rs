@@ -1,5 +1,7 @@
 use std::sync::Arc;
 
+use bevy_ecs::prelude::Resource;
+
 use crate::{Api, Blocks, Version};
 
 /// Provides access to all Minecraft data for a specific version.
@@ -7,7 +9,7 @@ use crate::{Api, Blocks, Version};
 /// This type is intended to be initialized once at program startup and accessed
 /// by reference thereafter. Construction is **not** an inexpensive operation,
 /// but access **is** an inexpensive operation.
-#[derive(Clone)]
+#[derive(Clone, Resource)]
 pub struct MinecraftData {
     inner: Arc<MinecraftDataInner>,
 }

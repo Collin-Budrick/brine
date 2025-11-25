@@ -139,7 +139,7 @@ fn handle_chunk_data(
         match get_chunk_from_packet(packet) {
             Ok(Some(chunk_data)) => {
                 trace!("Chunk: {:?}", chunk_data);
-                chunk_events.send(event::clientbound::ChunkData { chunk_data });
+                chunk_events.write(event::clientbound::ChunkData { chunk_data });
             }
             Err(e) => error!("{}", e),
             _ => {}

@@ -34,7 +34,7 @@
 
 use std::str::FromStr;
 
-use bevy::prelude::*;
+use bevy::{app::OnUpdate, prelude::*};
 use steven_protocol::protocol::{Serializable, VarInt};
 
 use brine_net::{CodecReader, CodecWriter, NetworkError, NetworkEvent, NetworkResource};
@@ -48,8 +48,9 @@ use crate::codec::{HANDSHAKE_LOGIN_NEXT, HANDSHAKE_STATUS_NEXT};
 
 use super::codec::{packet, Packet, ProtocolCodec};
 
-#[derive(Debug, Copy, Clone, PartialEq, Eq, Hash)]
+#[derive(Debug, Copy, Clone, PartialEq, Eq, Hash, States, Default)]
 enum LoginState {
+    #[default]
     Idle,
 
     // Phase 1
@@ -71,7 +72,7 @@ struct LoginResource {
 }
 
 pub(crate) fn build(app: &mut App) {
-    app.add_state(LoginState::Idle);
+    app.init_state::<LoginState>();
 
     protocol_discovery::build(app);
     login::build(app);
@@ -93,13 +94,13 @@ fn make_handshake_packet(protocol_version: i32, next_state: i32) -> Packet {
 fn handle_connection_error(
     mut network_events: EventReader<NetworkEvent<ProtocolCodec>>,
     mut login_failure_events: EventWriter<Disconnect>,
-    mut login_state: ResMut<State<LoginState>>,
+    mut login_state: ResMut<NextState<LoginState>>,
 ) {
-    for event in network_events.iter() {
+    for event in network_events.read() {
         if let NetworkEvent::Error(NetworkError::ConnectFailed(io_error)) = event {
             error!("Connection failed: {}", io_error);
 
-            login_failure_events.send(Disconnect {
+            login_failure_events.write(Disconnect {
                 reason: format!("Connection failed: {}", io_error),
             });
 
@@ -113,31 +114,34 @@ mod protocol_discovery {
     use super::*;
 
     pub(crate) fn build(app: &mut App) {
-        app.add_system_set(
-            SystemSet::on_update(LoginState::Idle).with_system(await_login_event_then_connect),
+        app.add_systems(
+            OnUpdate(LoginState::Idle),
+            await_login_event_then_connect,
         );
-        app.add_system_set(
-            SystemSet::on_update(LoginState::StatusAwaitingConnect)
-                .with_system(handle_connection_error)
-                .with_system(await_connect_then_send_handshake_and_status_request),
+        app.add_systems(
+            OnUpdate(LoginState::StatusAwaitingConnect),
+            (
+                handle_connection_error,
+                await_connect_then_send_handshake_and_status_request,
+            ),
         );
-        app.add_system_set(
-            SystemSet::on_update(LoginState::StatusAwaitingResponse)
-                .with_system(await_response_then_send_status_ping),
+        app.add_systems(
+            OnUpdate(LoginState::StatusAwaitingResponse),
+            await_response_then_send_status_ping,
         );
-        app.add_system_set(
-            SystemSet::on_update(LoginState::StatusAwaitingDisconnect)
-                .with_system(await_disconnect_then_connect_for_login),
+        app.add_systems(
+            OnUpdate(LoginState::StatusAwaitingDisconnect),
+            await_disconnect_then_connect_for_login,
         );
     }
 
     fn await_login_event_then_connect(
         mut login_events: EventReader<Login>,
-        mut login_state: ResMut<State<LoginState>>,
+        mut login_state: ResMut<NextState<LoginState>>,
         mut net_resource: ResMut<NetworkResource<ProtocolCodec>>,
         mut commands: Commands,
     ) {
-        if let Some(login) = login_events.iter().last() {
+        if let Some(login) = login_events.read().last() {
             info!("Logging in to server {}", login.server);
 
             debug!("Connecting to server for protocol discovery.");
@@ -148,17 +152,17 @@ mod protocol_discovery {
                 server_addr: login.server.clone(),
             });
 
-            login_state.set(LoginState::StatusAwaitingConnect).unwrap();
+            login_state.set(LoginState::StatusAwaitingConnect);
         }
     }
 
     fn await_connect_then_send_handshake_and_status_request(
         mut network_events: EventReader<NetworkEvent<ProtocolCodec>>,
         mut packet_writer: CodecWriter<ProtocolCodec>,
-        mut login_state: ResMut<State<LoginState>>,
+        mut login_state: ResMut<NextState<LoginState>>,
         net_resource: Res<NetworkResource<ProtocolCodec>>,
     ) {
-        for event in network_events.iter() {
+        for event in network_events.read() {
             if let NetworkEvent::Connected = event {
                 debug!("Connection established. Sending Handshake and StatusRequest packets.");
 
@@ -174,7 +178,7 @@ mod protocol_discovery {
                 )));
                 packet_writer.send(status_request);
 
-                login_state.set(LoginState::StatusAwaitingResponse).unwrap();
+                login_state.set(LoginState::StatusAwaitingResponse);
                 break;
             }
         }
@@ -183,7 +187,7 @@ mod protocol_discovery {
     fn await_response_then_send_status_ping(
         mut packet_reader: CodecReader<ProtocolCodec>,
         mut packet_writer: CodecWriter<ProtocolCodec>,
-        mut login_state: ResMut<State<LoginState>>,
+        mut login_state: ResMut<NextState<LoginState>>,
         net_resource: Res<NetworkResource<ProtocolCodec>>,
     ) {
         for packet in packet_reader.iter() {
@@ -205,9 +209,7 @@ mod protocol_discovery {
                     )));
                 packet_writer.send(status_ping);
 
-                login_state
-                    .set(LoginState::StatusAwaitingDisconnect)
-                    .unwrap();
+                login_state.set(LoginState::StatusAwaitingDisconnect);
                 break;
             }
         }
@@ -215,17 +217,17 @@ mod protocol_discovery {
 
     fn await_disconnect_then_connect_for_login(
         mut network_events: EventReader<NetworkEvent<ProtocolCodec>>,
-        mut login_state: ResMut<State<LoginState>>,
+        mut login_state: ResMut<NextState<LoginState>>,
         mut net_resource: ResMut<NetworkResource<ProtocolCodec>>,
         login_resource: Res<LoginResource>,
     ) {
-        for event in network_events.iter() {
+        for event in network_events.read() {
             if let NetworkEvent::Disconnected = event {
                 debug!("Server disconnected as expected.");
                 debug!("Connecting to server for login.");
                 net_resource.connect(login_resource.server_addr.clone());
 
-                login_state.set(LoginState::LoginAwaitingConnect).unwrap();
+                login_state.set(LoginState::LoginAwaitingConnect);
             }
         }
     }
@@ -236,13 +238,16 @@ mod login {
     use super::*;
 
     pub(crate) fn build(app: &mut App) {
-        app.add_system_set(
-            SystemSet::on_update(LoginState::LoginAwaitingConnect)
-                .with_system(handle_connection_error)
-                .with_system(await_connect_then_send_handshake_and_login_start),
+        app.add_systems(
+            OnUpdate(LoginState::LoginAwaitingConnect),
+            (
+                handle_connection_error,
+                await_connect_then_send_handshake_and_login_start,
+            ),
         );
-        app.add_system_set(
-            SystemSet::on_update(LoginState::LoginAwaitingSuccess).with_system(await_login_success),
+        app.add_systems(
+            OnUpdate(LoginState::LoginAwaitingSuccess),
+            await_login_success,
         );
     }
 
@@ -257,11 +262,11 @@ mod login {
     fn await_connect_then_send_handshake_and_login_start(
         mut network_events: EventReader<NetworkEvent<ProtocolCodec>>,
         mut packet_writer: CodecWriter<ProtocolCodec>,
-        mut login_state: ResMut<State<LoginState>>,
+        mut login_state: ResMut<NextState<LoginState>>,
         login_resource: Res<LoginResource>,
         net_resource: Res<NetworkResource<ProtocolCodec>>,
     ) {
-        for event in network_events.iter() {
+        for event in network_events.read() {
             if let NetworkEvent::Connected = event {
                 debug!("Connection established. Sending Handshake and LoginStart packets.");
 
@@ -276,7 +281,7 @@ mod login {
                 trace!("{:#?}", &login_start);
                 packet_writer.send(login_start);
 
-                login_state.set(LoginState::LoginAwaitingSuccess).unwrap();
+                login_state.set(LoginState::LoginAwaitingSuccess);
                 break;
             }
         }
@@ -288,14 +293,14 @@ mod login {
         mut packet_reader: CodecReader<ProtocolCodec>,
         mut login_success_events: EventWriter<LoginSuccess>,
         mut disconnect_events: EventWriter<Disconnect>,
-        mut login_state: ResMut<State<LoginState>>,
+        mut login_state: ResMut<NextState<LoginState>>,
     ) {
         let mut on_login_success = |username: String, uuid: Uuid| {
             info!("Successfully logged in to server.");
 
-            login_success_events.send(LoginSuccess { username, uuid });
+            login_success_events.write(LoginSuccess { username, uuid });
 
-            login_state.set(LoginState::Play).unwrap();
+            login_state.set(LoginState::Play);
         };
 
         for packet in packet_reader.iter() {
@@ -321,9 +326,9 @@ mod login {
                     let message = format!("Login disconnect: {}", login_disconnect.reason);
                     error!("{}", &message);
 
-                    disconnect_events.send(Disconnect { reason: message });
+                    disconnect_events.write(Disconnect { reason: message });
 
-                    login_state.set(LoginState::Idle).unwrap();
+                    login_state.set(LoginState::Idle);
                     break;
                 }
 
@@ -337,10 +342,9 @@ mod play {
     use super::*;
 
     pub(crate) fn build(app: &mut App) {
-        app.add_system_set(
-            SystemSet::on_update(LoginState::Play)
-                .with_system(respond_to_keep_alive_packets)
-                .with_system(handle_disconnect),
+        app.add_systems(
+            OnUpdate(LoginState::Play),
+            (respond_to_keep_alive_packets, handle_disconnect),
         );
     }
 
@@ -384,7 +388,7 @@ mod play {
         for packet in packet_reader.iter() {
             if let Packet::Known(packet::Packet::Disconnect(disconnect)) = packet {
                 let reason = disconnect.reason.to_string();
-                disconnect_events.send(Disconnect { reason });
+                disconnect_events.write(Disconnect { reason });
             }
         }
     }

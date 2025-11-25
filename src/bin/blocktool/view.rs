@@ -1,6 +1,7 @@
 use bevy::{
+    asset::RenderAssetUsages,
     prelude::*,
-    render::{mesh::Indices, render_resource::PrimitiveTopology},
+    render::{mesh::indices::Indices, render_resource::PrimitiveTopology},
     sprite::Rect,
 };
 use bevy_inspector_egui::WorldInspectorPlugin;
@@ -146,9 +147,10 @@ fn display_block(block_reference: &str, show_faces: ShowFaces) {
         .add_plugin(TextureManagerPlugin)
         .add_plugin(MinecraftTexturesPlugin)
         .insert_resource(TheBlocks::new(block_state_ids))
-        .add_system_set(SystemSet::on_enter(MinecraftTexturesState::Loaded).with_system(setup))
-        .add_system_set(
-            SystemSet::on_update(MinecraftTexturesState::Loaded).with_system(next_block_state),
+        .add_systems(OnEnter(MinecraftTexturesState::Loaded), setup)
+        .add_systems(
+            OnUpdate(MinecraftTexturesState::Loaded),
+            next_block_state,
         )
         .run();
 }
@@ -198,7 +200,7 @@ fn setup(
     mut materials: ResMut<Assets<StandardMaterial>>,
     mut commands: Commands,
 ) {
-    commands.spawn_bundle(PerspectiveCameraBundle {
+    commands.spawn(PerspectiveCameraBundle {
         transform: Transform::from_translation(Vec3::new(4.0, 3.0, 4.0))
             .looking_at(Vec3::ZERO, Vec3::Y),
         ..Default::default()
@@ -211,7 +213,7 @@ fn setup(
         ..Default::default()
     };
     commands
-        .spawn_bundle(PbrBundle {
+        .spawn(PbrBundle {
             mesh: meshes.add(origin_cube),
             material: materials.add(origin_material),
             visibility: Visibility { is_visible: false },
@@ -334,7 +336,7 @@ fn spawn_block_state(
         };
 
         commands
-            .spawn_bundle(PbrBundle {
+            .spawn(PbrBundle {
                 mesh: meshes.add(mesh),
                 material: materials.add(material),
                 ..Default::default()
@@ -394,7 +396,10 @@ fn baked_model_to_mesh(
         tex_coords.extend_from_slice(&adjust_tex_coords(quad.tex_coords, uvs_within_atlas));
     }
 
-    let mut mesh = Mesh::new(PrimitiveTopology::TriangleList);
+    let mut mesh = Mesh::new(
+        PrimitiveTopology::TriangleList,
+        RenderAssetUsages::default(),
+    );
     mesh.insert_attribute(Mesh::ATTRIBUTE_POSITION, positions);
     mesh.insert_attribute(Mesh::ATTRIBUTE_NORMAL, normals);
     mesh.insert_attribute(Mesh::ATTRIBUTE_UV_0, tex_coords);

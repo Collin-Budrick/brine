@@ -1,4 +1,4 @@
-use glam::{const_vec3a, Vec3A};
+use glam::Vec3A;
 
 use crate::Direction;
 
@@ -98,12 +98,12 @@ impl AaCuboid {
     #[inline(always)]
     pub const fn get_normal(face: Direction) -> Vec3A {
         match face {
-            Direction::XNeg => const_vec3a!([-1.0, 0.0, 0.0]),
-            Direction::XPos => const_vec3a!([1.0, 0.0, 0.0]),
-            Direction::YNeg => const_vec3a!([0.0, -1.0, 0.0]),
-            Direction::YPos => const_vec3a!([0.0, 1.0, 0.0]),
-            Direction::ZNeg => const_vec3a!([0.0, 0.0, -1.0]),
-            Direction::ZPos => const_vec3a!([0.0, 0.0, 1.0]),
+            Direction::XNeg => Vec3A::new(-1.0, 0.0, 0.0),
+            Direction::XPos => Vec3A::new(1.0, 0.0, 0.0),
+            Direction::YNeg => Vec3A::new(0.0, -1.0, 0.0),
+            Direction::YPos => Vec3A::new(0.0, 1.0, 0.0),
+            Direction::ZNeg => Vec3A::new(0.0, 0.0, -1.0),
+            Direction::ZPos => Vec3A::new(0.0, 0.0, 1.0),
         }
     }
 }

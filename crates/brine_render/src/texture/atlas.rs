@@ -1,9 +1,15 @@
-use bevy::{prelude::*, reflect::TypeUuid, sprite::Rect, utils::HashMap};
+use bevy::{
+    asset::Asset,
+    image::TextureAtlasBuilder,
+    math::UVec2,
+    prelude::*,
+    reflect::TypePath,
+};
+use std::collections::HashMap;
 
 use brine_asset::TextureKey;
 
-#[derive(Debug, Clone, TypeUuid)]
-#[uuid = "3e8bc6e9-b91f-4f11-81ef-105ec53fa370"]
+#[derive(Debug, Clone, Asset, TypePath)]
 pub struct TextureAtlas {
     /// The handle to the stitched texture atlas.
     pub texture: Handle<Image>,
@@ -43,32 +49,27 @@ impl TextureAtlas {
 
         debug!("Stitching texture atlas with {} textures", textures.len());
 
-        let mut builder = bevy::sprite::TextureAtlasBuilder::default()
-            .max_size(Vec2::new(max_texture_size as f32, max_texture_size as f32));
+        let mut builder = TextureAtlasBuilder::default();
+        builder.max_size(UVec2::new(max_texture_size, max_texture_size));
 
         for (_, handle) in textures.iter() {
             let image = assets.get(*handle).expect("all textures must be loaded");
-            builder.add_texture(handle.clone_weak(), image);
+            builder.add_texture(Some(handle.id()), image);
         }
 
         builder.add_texture(
-            placeholder_texture.clone_weak(),
+            Some(placeholder_texture.id()),
             assets.get(placeholder_texture).unwrap(),
         );
 
-        let bevy_atlas = builder.finish(assets).unwrap();
-
-        let atlas_image = assets.get(&bevy_atlas.texture).unwrap();
-        let atlas_size = atlas_image.texture_descriptor.size;
-        let atlas_size = Vec2::new(atlas_size.width as f32, atlas_size.height as f32);
+        let (layout, sources, atlas_image) = builder.build().unwrap();
+        let atlas_size = layout.size.as_vec2();
+        let atlas_handle = assets.add(atlas_image);
 
         let handle_to_uv = |handle: &Handle<Image>| {
-            let index = bevy_atlas.get_texture_index(handle).unwrap();
-            let pixel_rect = bevy_atlas.textures[index];
-            Rect {
-                min: pixel_rect.min / atlas_size,
-                max: pixel_rect.max / atlas_size,
-            }
+            sources
+                .uv_rect(&layout, handle.id())
+                .expect("texture missing from atlas")
         };
 
         let key_to_uv = textures
@@ -84,7 +85,7 @@ impl TextureAtlas {
         );
 
         Self {
-            texture: bevy_atlas.texture,
+            texture: atlas_handle,
             regions: key_to_uv,
             placeholder_region: placeholder_uv,
         }

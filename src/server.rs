@@ -83,7 +83,7 @@ fn send_chunks(
     for (task_entity, mut task) in tasks.iter_mut() {
         if let Some(chunk_data) = future::block_on(future::poll_once(&mut *task)) {
             let chunk_data = chunk_data?;
-            chunk_events.send(ChunkData { chunk_data });
+            chunk_events.write(ChunkData { chunk_data });
 
             commands.entity(task_entity).despawn();
         }

@@ -1,21 +1,16 @@
 use bevy::{
     pbr::wireframe::{WireframeConfig, WireframePlugin},
     prelude::*,
-    render::{options::WgpuOptions, render_resource::WgpuFeatures},
 };
 
 pub struct DebugWireframePlugin;
 
 impl Plugin for DebugWireframePlugin {
     fn build(&self, app: &mut App) {
-        app.insert_resource(WgpuOptions {
-            features: WgpuFeatures::POLYGON_MODE_LINE,
-            ..Default::default()
-        })
-        .add_plugin(WireframePlugin)
-        .register_type::<EnableWireframe>()
-        .add_startup_system(spawn_component)
-        .add_system(update_wireframe_config);
+        app.add_plugins(WireframePlugin)
+            .register_type::<EnableWireframe>()
+            .add_systems(Startup, spawn_component)
+            .add_systems(Update, update_wireframe_config);
     }
 }
 
@@ -26,7 +21,7 @@ pub struct EnableWireframe {
 }
 
 fn spawn_component(mut commands: Commands) {
-    commands.spawn().insert_bundle((
+    commands.spawn((
         Name::new("Debug Wireframe"),
         EnableWireframe { enable: true },
     ));
