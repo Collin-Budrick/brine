@@ -1,7 +1,7 @@
 use std::{io::Read, io::Write, net::TcpListener};
 
 use bevy::{
-    log::{Level, LogPlugin, LogSettings},
+    log::{Level, LogPlugin},
     prelude::*,
 };
 use byteorder::{BigEndian, ReadBytesExt, WriteBytesExt};
@@ -18,16 +18,16 @@ fn main() {
     std::thread::spawn(move || echo_server(listener));
 
     App::new()
-        .add_plugins(MinimalPlugins)
-        .insert_resource(LogSettings {
-            level: Level::TRACE,
-            ..Default::default()
-        })
-        .add_plugin(LogPlugin)
-        .add_plugin(NetworkPlugin::<StringCodec>::default())
-        .add_startup_system(connect)
-        .add_system(read_net_events)
-        .add_system(read_packets)
+        .add_plugins((
+            MinimalPlugins,
+            LogPlugin {
+                level: Level::TRACE,
+                ..Default::default()
+            },
+            NetworkPlugin::<StringCodec>::default(),
+        ))
+        .add_systems(Startup, connect)
+        .add_systems(Update, (read_net_events, read_packets))
         .run();
 }
 

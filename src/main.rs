@@ -4,7 +4,7 @@ use std::path::PathBuf;
 
 use bevy::{
     diagnostic::{FrameTimeDiagnosticsPlugin, LogDiagnosticsPlugin},
-    log::{Level, LogSettings},
+    log::{Level, LogPlugin},
     prelude::*,
 };
 use bevy_fly_camera::{FlyCamera, FlyCameraPlugin};
@@ -53,24 +53,24 @@ fn main() {
     let mut app = App::new();
 
     // Default plugins.
-
-    app.insert_resource(LogSettings {
+    app.add_plugins(DefaultPlugins.set(LogPlugin {
         level: Level::DEBUG,
         filter: String::from(DEFAULT_LOG_FILTER),
-    });
-    app.add_plugins(DefaultPlugins);
+    }));
 
     // Brine-specific plugins.
 
-    app.add_plugin(ProtocolPlugin);
+    app.add_plugins(ProtocolPlugin);
 
     if let Some(chunk_dir) = args.chunk_dir {
-        app.add_plugin(AlwaysSuccessfulLoginPlugin);
-        app.add_plugin(ServeChunksFromDirectoryPlugin::new(chunk_dir));
+        app.add_plugins((
+            AlwaysSuccessfulLoginPlugin,
+            ServeChunksFromDirectoryPlugin::new(chunk_dir),
+        ));
     } else {
-        app.add_plugin(ProtocolBackendPlugin);
+        app.add_plugins(ProtocolBackendPlugin);
         let server = args.server.clone().unwrap_or_else(|| SERVER.to_string());
-        app.add_plugin(
+        app.add_plugins(
             LoginPlugin::new(server, USERNAME.to_string()).exit_on_disconnect(),
         );
     }
@@ -80,17 +80,17 @@ fn main() {
     let mc_assets = MinecraftAssets::new("assets/1.14.4", &mc_data).unwrap();
     app.insert_resource(mc_data);
     app.insert_resource(mc_assets);
-    app.add_plugin(TextureBuilderPlugin);
-
-    app.add_plugin(MinecraftWorldViewerPlugin);
+    app.add_plugins((TextureBuilderPlugin, MinecraftWorldViewerPlugin));
 
     // Debugging, diagnostics, and utility plugins.
 
     if args.debug {
-        app.add_plugin(WorldInspectorPlugin::new())
-            .add_plugin(DebugWireframePlugin)
-            .add_plugin(FrameTimeDiagnosticsPlugin)
-            .add_plugin(LogDiagnosticsPlugin::default());
+        app.add_plugins((
+            WorldInspectorPlugin::new(),
+            DebugWireframePlugin,
+            FrameTimeDiagnosticsPlugin,
+            LogDiagnosticsPlugin::default(),
+        ));
     }
 
     app.run();
@@ -102,11 +102,13 @@ pub struct MinecraftWorldViewerPlugin;
 impl Plugin for MinecraftWorldViewerPlugin {
     fn build(&self, app: &mut App) {
         app.insert_resource(Msaa { samples: 4 })
-            .add_plugin(FlyCameraPlugin)
-            .add_plugin(ChunkBuilderPlugin::<VisibleFacesChunkBuilder>::default())
-            // .add_plugin(ChunkBuilderPlugin::<GreedyQuadsChunkBuilder>::default())
-            .add_startup_system(set_up_camera)
-            .add_system(give_chunk_sections_correct_y_height);
+            .add_plugins((
+                FlyCameraPlugin,
+                ChunkBuilderPlugin::<VisibleFacesChunkBuilder>::default(),
+                // ChunkBuilderPlugin::<GreedyQuadsChunkBuilder>::default(),
+            ))
+            .add_systems(Startup, set_up_camera)
+            .add_systems(Update, give_chunk_sections_correct_y_height);
     }
 }
 
@@ -119,7 +121,7 @@ fn set_up_camera(mut commands: Commands) {
     //     .looking_at(Vec3::new(-40.0, 100.0, 0.0), Vec3::Y);
 
     commands
-        .spawn_bundle(PerspectiveCameraBundle {
+        .spawn(Camera3dBundle {
             transform: camera_start,
             ..Default::default()
         })

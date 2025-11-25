@@ -4,7 +4,7 @@ use std::{
 };
 
 use bevy::{
-    log::{Level, LogSettings},
+    log::{Level, LogPlugin},
     pbr::wireframe::{WireframeConfig, WireframePlugin},
     prelude::*,
     render::{options::WgpuOptions, render_resource::WgpuFeatures},
@@ -116,43 +116,39 @@ const DISTANCE_FROM_ORIGIN: f32 = 13.0;
 pub fn main(args: Args) {
     let mut app = App::new();
 
-    app.insert_resource(LogSettings {
-        level: Level::DEBUG,
-        filter: String::from(DEFAULT_LOG_FILTER),
-    })
-    .insert_resource(WgpuOptions {
+    app.insert_resource(WgpuOptions {
         features: WgpuFeatures::POLYGON_MODE_LINE,
         ..Default::default()
     })
-    .add_plugins(DefaultPlugins)
+    .add_plugins(DefaultPlugins.set(LogPlugin {
+        level: Level::DEBUG,
+        filter: String::from(DEFAULT_LOG_FILTER),
+    }))
     .insert_resource(Msaa { samples: 4 })
     .insert_resource(WireframeConfig { global: true })
-    .add_plugin(WireframePlugin)
-    .add_plugin(WorldInspectorPlugin::new())
-    .add_plugin(ProtocolPlugin);
+    .add_plugins((WireframePlugin, WorldInspectorPlugin::new(), ProtocolPlugin));
 
     let mc_data = MinecraftData::for_version("1.14.4");
     let mc_assets = MinecraftAssets::new("assets/1.14.4", &mc_data).unwrap();
     app.insert_resource(mc_data);
     app.insert_resource(mc_assets);
-    app.add_plugin(TextureBuilderPlugin);
+    app.add_plugins(TextureBuilderPlugin);
 
-    app.add_plugin(ChunkBuilderPlugin::<NaiveBlocksChunkBuilder>::shared());
+    app.add_plugins(ChunkBuilderPlugin::<NaiveBlocksChunkBuilder>::shared());
 
     match args.builder {
         ChunkBuilderType::VisibleFaces => {
-            app.add_plugin(ChunkBuilderPlugin::<VisibleFacesChunkBuilder>::shared());
+            app.add_plugins(ChunkBuilderPlugin::<VisibleFacesChunkBuilder>::shared());
         }
         ChunkBuilderType::GreedyQuads => {
-            app.add_plugin(ChunkBuilderPlugin::<GreedyQuadsChunkBuilder>::shared());
+            app.add_plugins(ChunkBuilderPlugin::<GreedyQuadsChunkBuilder>::shared());
         }
     }
 
-    app.add_plugin(ChunkViewerPlugin);
+    app.add_plugins(ChunkViewerPlugin);
 
-    app.add_startup_system(load_first_chunk.chain(log_error))
-        .add_startup_system(set_up_camera)
-        .add_system(load_next_chunk.chain(log_error));
+    app.add_systems(Startup, (load_first_chunk.chain(log_error), set_up_camera))
+        .add_systems(Update, load_next_chunk.chain(log_error));
 
     app.insert_resource(Chunks::new(args.files));
     app.run();
@@ -194,7 +190,7 @@ fn load_next_chunk(
 }
 
 fn set_up_camera(mut commands: Commands) {
-    commands.spawn_bundle(PerspectiveCameraBundle {
+    commands.spawn(Camera3dBundle {
         transform: Transform::from_translation(Vec3::new(0.0, 8.0, 38.0))
             .looking_at(Vec3::ZERO, Vec3::Y),
         ..Default::default()
@@ -205,10 +201,15 @@ struct ChunkViewerPlugin;
 
 impl Plugin for ChunkViewerPlugin {
     fn build(&self, app: &mut App) {
-        app.add_system(Self::center_section_at_bottom_of_chunk);
-        app.add_system(Self::rename_chunks);
-        app.add_system(Self::move_and_rotate);
-        app.add_system(Self::rotate_chunk);
+        app.add_systems(
+            Update,
+            (
+                Self::center_section_at_bottom_of_chunk,
+                Self::rename_chunks,
+                Self::move_and_rotate,
+                Self::rotate_chunk,
+            ),
+        );
     }
 }
 
