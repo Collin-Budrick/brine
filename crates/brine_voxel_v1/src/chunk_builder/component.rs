@@ -1,15 +1,17 @@
 use std::fmt;
 
-use bevy::prelude::*;
+use bevy::{prelude::*, tasks::Task};
 
 use crate::mesh::VoxelMesh;
 
 use super::ChunkBuilderType;
 
 pub struct PendingMeshAtlas {
-    /// Strong handle to a texture atlas that contains all of the textures
-    /// needed to render a [`VoxelMesh`].
-    pub atlas: Handle<TextureAtlas>,
+    /// Handle to the image that backs this texture atlas.
+    pub texture: Handle<Image>,
+
+    /// Handle to the atlas layout.
+    pub layout: Handle<TextureAtlasLayout>,
 
     /// List of weak texture handles, one for each face in the [`VoxelMesh`].
     pub face_textures: Vec<Handle<Image>>,
@@ -18,6 +20,8 @@ pub struct PendingMeshAtlas {
 #[derive(Component, Default)]
 pub struct PendingChunk {
     pub builder: ChunkBuilderType,
+
+    pub task: Option<Task<(brine_chunk::Chunk, Vec<VoxelMesh>)>>,
 
     pub chunk_data: Option<brine_chunk::Chunk>,
     pub voxel_meshes: Option<Vec<VoxelMesh>>,
@@ -29,6 +33,7 @@ impl PendingChunk {
     pub fn new(builder: ChunkBuilderType) -> Self {
         Self {
             builder,
+            task: None,
             ..Default::default()
         }
     }
@@ -104,6 +109,9 @@ pub struct BuiltChunkSectionBundle {
     pub name: Name,
     pub transform: Transform,
     pub global_transform: GlobalTransform,
+    pub visibility: Visibility,
+    pub inherited_visibility: InheritedVisibility,
+    pub view_visibility: ViewVisibility,
 }
 
 impl BuiltChunkSectionBundle {
@@ -117,6 +125,9 @@ impl BuiltChunkSectionBundle {
             name,
             transform: Transform::from_translation(Vec3::new(0.0, (section_y * 16) as f32, 0.0)),
             global_transform: GlobalTransform::default(),
+            visibility: Visibility::Visible,
+            inherited_visibility: InheritedVisibility::default(),
+            view_visibility: ViewVisibility::default(),
         }
     }
 }

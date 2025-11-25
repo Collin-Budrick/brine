@@ -4,6 +4,7 @@ use std::{
 };
 
 use bevy::{
+    input::ButtonInput,
     log::{Level, LogPlugin},
     pbr::wireframe::{WireframeConfig, WireframePlugin},
     prelude::*,
@@ -13,7 +14,7 @@ use bevy::{
         RenderPlugin,
     },
 };
-use bevy_inspector_egui::WorldInspectorPlugin;
+use bevy_inspector_egui::quick::WorldInspectorPlugin;
 
 use brine_asset::MinecraftAssets;
 use brine_chunk::{Chunk, ChunkSection};
@@ -33,7 +34,7 @@ use brine::{
     error::log_error,
     DEFAULT_LOG_FILTER,
 };
-use clap::ArgEnum;
+use clap::ValueEnum;
 
 /// Loads a chunk from a file and views it in 3D.
 #[derive(clap::Args)]
@@ -42,17 +43,18 @@ pub struct Args {
     files: Vec<PathBuf>,
 
     /// Which chunk builder to test.
-    #[clap(arg_enum, short, long, default_value = "visible_faces")]
+    #[arg(value_enum, short, long, default_value_t = ChunkBuilderType::VisibleFaces)]
     builder: ChunkBuilderType,
 }
 
-#[derive(Clone, ArgEnum)]
-#[clap(rename_all = "snake_case")]
+#[derive(Clone, ValueEnum)]
+#[clap(value_enum, rename_all = "snake_case")]
 enum ChunkBuilderType {
     VisibleFaces,
     GreedyQuads,
 }
 
+#[derive(Resource)]
 struct Chunks {
     files: Vec<PathBuf>,
     next_file: usize,
@@ -101,7 +103,7 @@ impl Chunks {
         section
     }
 
-    fn send_next_section(&mut self, chunk_events: &mut EventWriter<event::clientbound::ChunkData>) {
+    fn send_next_section(&mut self, chunk_events: &mut MessageWriter<event::clientbound::ChunkData>) {
         let section = self.next_section();
 
         let single_section_chunk = Chunk {
@@ -125,6 +127,7 @@ pub fn main(args: Args) {
             .set(LogPlugin {
                 level: Level::DEBUG,
                 filter: String::from(DEFAULT_LOG_FILTER),
+                ..default()
             })
             .set(RenderPlugin {
                 render_creation: RenderCreation::Automatic(WgpuSettings {
@@ -134,9 +137,15 @@ pub fn main(args: Args) {
                 ..default()
             }),
     )
-    .insert_resource(Msaa { samples: 4 })
-    .insert_resource(WireframeConfig { global: true })
-    .add_plugins((WireframePlugin, WorldInspectorPlugin::new(), ProtocolPlugin));
+    .insert_resource(WireframeConfig {
+        global: true,
+        default_color: Color::WHITE,
+    })
+    .add_plugins((
+        WireframePlugin::default(),
+        WorldInspectorPlugin::new(),
+        ProtocolPlugin,
+    ));
 
     let mc_data = MinecraftData::for_version("1.14.4");
     let mc_assets = MinecraftAssets::new("assets/1.14.4", &mc_data).unwrap();
@@ -157,8 +166,8 @@ pub fn main(args: Args) {
 
     app.add_plugins(ChunkViewerPlugin);
 
-    app.add_systems(Startup, (load_first_chunk.chain(log_error), set_up_camera))
-        .add_systems(Update, load_next_chunk.chain(log_error));
+    app.add_systems(Startup, (load_first_chunk.pipe(log_error), set_up_camera))
+        .add_systems(Update, load_next_chunk.pipe(log_error));
 
     app.insert_resource(Chunks::new(args.files));
     app.run();
@@ -166,7 +175,7 @@ pub fn main(args: Args) {
 
 fn load_first_chunk(
     mut chunks: ResMut<Chunks>,
-    mut chunk_events: EventWriter<event::clientbound::ChunkData>,
+    mut chunk_events: MessageWriter<event::clientbound::ChunkData>,
 ) -> Result<()> {
     chunks.load_next_file()?;
     chunks.send_next_section(&mut chunk_events);
@@ -174,15 +183,15 @@ fn load_first_chunk(
 }
 
 fn load_next_chunk(
-    input: Res<Input<KeyCode>>,
+    input: Res<ButtonInput<KeyCode>>,
     mut chunks: ResMut<Chunks>,
-    mut chunk_events: EventWriter<event::clientbound::ChunkData>,
+    mut chunk_events: MessageWriter<event::clientbound::ChunkData>,
     query: Query<Entity, With<BuiltChunk>>,
     mut commands: Commands,
 ) -> Result<()> {
     let should_show_next =
-        input.just_pressed(KeyCode::Return) || input.just_pressed(KeyCode::Space);
-    let should_load_next_file = input.just_pressed(KeyCode::Return);
+        input.just_pressed(KeyCode::Enter) || input.just_pressed(KeyCode::Space);
+    let should_load_next_file = input.just_pressed(KeyCode::Enter);
 
     if should_load_next_file {
         chunks.load_next_file()?;
@@ -190,7 +199,7 @@ fn load_next_chunk(
 
     if should_show_next {
         for entity in query.iter() {
-            commands.entity(entity).despawn_recursive();
+            commands.entity(entity).despawn();
         }
 
         chunks.send_next_section(&mut chunk_events);
@@ -200,11 +209,12 @@ fn load_next_chunk(
 }
 
 fn set_up_camera(mut commands: Commands) {
-    commands.spawn(Camera3dBundle {
-        transform: Transform::from_translation(Vec3::new(0.0, 8.0, 38.0))
-            .looking_at(Vec3::ZERO, Vec3::Y),
-        ..Default::default()
-    });
+    commands.spawn((
+        Camera3d::default(),
+        Msaa::Sample4,
+        Transform::from_translation(Vec3::new(0.0, 8.0, 38.0)).looking_at(Vec3::ZERO, Vec3::Y),
+        GlobalTransform::default(),
+    ));
 }
 
 struct ChunkViewerPlugin;
@@ -243,7 +253,7 @@ impl ChunkViewerPlugin {
     fn rename_chunks(mut query: Query<(&mut Name, &BuiltChunk), Added<Name>>) {
         for (mut name, built_chunk) in query.iter_mut() {
             let builder_name = built_chunk.builder.0;
-            let new_name = format!("{} ({})", **name, builder_name);
+            let new_name = format!("{} ({})", name.as_str(), builder_name);
             name.set(new_name);
         }
     }
@@ -257,16 +267,16 @@ impl ChunkViewerPlugin {
     }
 
     fn rotate_chunk(
-        input: Res<Input<KeyCode>>,
+        input: Res<ButtonInput<KeyCode>>,
         mut query: Query<&mut Transform, With<BuiltChunk>>,
     ) {
         for mut transform in query.iter_mut() {
             for keypress in input.get_just_pressed() {
                 match keypress {
-                    KeyCode::Left => transform.rotate(Quat::from_rotation_y(-PI / 4.0)),
-                    KeyCode::Right => transform.rotate(Quat::from_rotation_y(PI / 4.0)),
-                    KeyCode::Down => transform.rotate(Quat::from_rotation_x(PI / 4.0)),
-                    KeyCode::Up => transform.rotate(Quat::from_rotation_x(-PI / 4.0)),
+                    KeyCode::ArrowLeft => transform.rotate(Quat::from_rotation_y(-PI / 4.0)),
+                    KeyCode::ArrowRight => transform.rotate(Quat::from_rotation_y(PI / 4.0)),
+                    KeyCode::ArrowDown => transform.rotate(Quat::from_rotation_x(PI / 4.0)),
+                    KeyCode::ArrowUp => transform.rotate(Quat::from_rotation_x(-PI / 4.0)),
                     KeyCode::Escape => transform.rotation = Quat::from_rotation_y(PI / 4.0),
                     _ => {}
                 }

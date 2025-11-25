@@ -4,9 +4,10 @@ use bevy::{
     asset::RenderAssetUsages,
     ecs::component::Component,
     prelude::*,
-    render::{mesh::indices::Indices, render_resource::PrimitiveTopology},
-    sprite::TextureAtlas,
+    render::render_resource::PrimitiveTopology,
 };
+use bevy_mesh::Indices;
+use bevy_image::{TextureAtlasLayout, TextureAtlasSources};
 use brine_asset::BlockFace;
 
 /// The six sides of a voxel.
@@ -115,32 +116,28 @@ impl VoxelMesh {
 
     pub fn adjust_tex_coords(
         &mut self,
-        texture_atlas: &TextureAtlas,
+        layout: &TextureAtlasLayout,
+        sources: &TextureAtlasSources,
         face_textures: &[Handle<Image>],
     ) {
         for (face, texture_handle) in self.faces.iter_mut().zip(face_textures.iter()) {
-            face.tex_coords = Self::get_tex_coords(face, texture_atlas, texture_handle);
+            face.tex_coords = Self::get_tex_coords(face, layout, sources, texture_handle);
         }
     }
 
     fn get_tex_coords(
         face: &VoxelFace,
-        texture_atlas: &TextureAtlas,
+        layout: &TextureAtlasLayout,
+        sources: &TextureAtlasSources,
         texture_handle: &Handle<Image>,
     ) -> [[f32; 2]; 4] {
-        let index = texture_atlas
-            .texture_handles
-            .as_ref()
-            .unwrap()
-            .get(texture_handle);
-
-        if let Some(index) = index {
-            let rect = texture_atlas.textures[*index];
-
+        if let Some(rect) = sources.texture_rect(layout, texture_handle.id()) {
+            let rect = rect.as_rect();
+            let size = layout.size.as_vec2();
             face.tex_coords.map(|[u, v]| {
                 [
-                    (rect.min.x + (u * rect.width())) / texture_atlas.size.x,
-                    (rect.min.y + (v * rect.height())) / texture_atlas.size.y,
+                    (rect.min.x + (u * rect.width())) / size.x,
+                    (rect.min.y + (v * rect.height())) / size.y,
                 ]
             })
         } else {

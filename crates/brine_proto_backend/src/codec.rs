@@ -186,16 +186,13 @@ impl fmt::Debug for UnknownPacket {
 
 fn hex_dump(bytes: &impl AsRef<[u8]>) -> String {
     const CONFIG: pretty_hex::HexConfig = pretty_hex::HexConfig {
-        // Do not print a title.
         title: false,
-        // Print all bytes on one line.
         width: 0,
-        // Do not group the bytes.
         group: 0,
-        // Do not split bytes into chunks.
         chunk: 0,
-        // Include an ASCII representation at the end.
         ascii: true,
+        max_bytes: usize::MAX,
+        display_offset: 0,
     };
     pretty_hex::config_hex(bytes, CONFIG)
 }

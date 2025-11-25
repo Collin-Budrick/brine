@@ -14,26 +14,26 @@ use brine::{chunk::save_packet_if_has_chunk_data, login::LoginPlugin};
 /// specified output directory.
 ///
 /// Files will be named `chunk_{X}_{Z}.dump` and `chunk_{X}_{Z}.meta`.
-#[derive(clap::Args)]
+#[derive(clap::Args, Resource)]
 pub struct Args {
     /// Output directory.
-    #[clap(short, long, value_name = "DIR")]
+    #[arg(short, long, value_name = "DIR")]
     output: PathBuf,
 
     /// Server hostname or IP address.
-    #[clap(short, long, value_name = "HOST", default_value = "localhost")]
+    #[arg(short, long, value_name = "HOST", default_value = "localhost")]
     server: String,
 
     /// Server port.
-    #[clap(short, long, default_value = "25565")]
+    #[arg(short, long, default_value = "25565")]
     port: u16,
 
     /// Username to login with.
-    #[clap(short, long, default_value = "Herobrine")]
+    #[arg(short, long, default_value = "Herobrine")]
     username: String,
 
     /// Exit after saving this many chunks.
-    #[clap(short, long)]
+    #[arg(short, long)]
     limit: Option<usize>,
 }
 
@@ -42,22 +42,21 @@ pub fn main(args: Args) {
 
     App::new()
         .add_plugins(MinimalPlugins)
-        .add_plugin(ProtocolPlugin)
-        .add_plugin(ProtocolBackendPlugin)
-        .add_plugin(LoginPlugin::new(server_addr, args.username.clone()))
+        .add_plugins(ProtocolPlugin)
+        .add_plugins(ProtocolBackendPlugin)
+        .add_plugins(LoginPlugin::new(server_addr, args.username.clone()))
         .insert_resource(args)
-        .add_system(receive_chunks)
-        .add_system(handle_disconnect)
+        .add_systems(Update, (receive_chunks, handle_disconnect))
         .run();
 }
 
 fn handle_disconnect(
-    mut disconnect_events: EventReader<Disconnect>,
-    mut app_exit: EventWriter<AppExit>,
+    mut disconnect_events: MessageReader<Disconnect>,
+    mut app_exit: MessageWriter<AppExit>,
 ) {
     if let Some(disconnect) = disconnect_events.read().last() {
         println!("Disconnected from server. Reason: {}", disconnect.reason);
-        app_exit.write(AppExit);
+        app_exit.write(AppExit::Success);
     }
 }
 
@@ -65,7 +64,7 @@ fn receive_chunks(
     args: Res<Args>,
     mut chunks_saved: Local<usize>,
     mut packet_reader: CodecReader<ProtocolCodec>,
-    mut app_exit: EventWriter<AppExit>,
+    mut app_exit: MessageWriter<AppExit>,
 ) {
     for packet in packet_reader.iter() {
         if let Ok(Some(path)) = save_packet_if_has_chunk_data(packet, &args.output)
@@ -82,7 +81,7 @@ fn receive_chunks(
         if let Some(limit) = args.limit {
             if *chunks_saved >= limit {
                 println!("Limit reached, terminating.");
-                app_exit.write(AppExit);
+                app_exit.write(AppExit::Success);
                 break;
             }
         }

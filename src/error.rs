@@ -11,10 +11,10 @@ pub fn log_error<T, E: fmt::Display>(In(result): In<Result<T, E>>) {
 
 pub fn exit_on_error<T, E: fmt::Display>(
     In(result): In<Result<T, E>>,
-    mut app_exit: EventWriter<AppExit>,
+    mut app_exit: MessageWriter<AppExit>,
 ) {
     if let Err(e) = result {
         error!("{}", e);
-        app_exit.write(AppExit);
+        app_exit.write(AppExit::error());
     }
 }

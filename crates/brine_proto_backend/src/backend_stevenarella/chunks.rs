@@ -126,14 +126,14 @@ pub fn get_chunk_from_packet(packet: &Packet) -> Result<Option<Chunk>> {
 }
 
 pub(crate) fn build(app: &mut App) {
-    app.add_system(handle_chunk_data);
+    app.add_systems(Update, handle_chunk_data);
 }
 
 /// System that listens for ChunkData packets and sends ChunkData events to the
 /// client application.
 fn handle_chunk_data(
     mut packet_reader: CodecReader<ProtocolCodec>,
-    mut chunk_events: EventWriter<event::clientbound::ChunkData>,
+    mut chunk_events: MessageWriter<event::clientbound::ChunkData>,
 ) {
     for packet in packet_reader.iter() {
         match get_chunk_from_packet(packet) {

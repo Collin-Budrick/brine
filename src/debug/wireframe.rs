@@ -7,7 +7,7 @@ pub struct DebugWireframePlugin;
 
 impl Plugin for DebugWireframePlugin {
     fn build(&self, app: &mut App) {
-        app.add_plugins(WireframePlugin)
+        app.add_plugins(WireframePlugin::default())
             .register_type::<EnableWireframe>()
             .add_systems(Startup, spawn_component)
             .add_systems(Update, update_wireframe_config);
@@ -31,6 +31,7 @@ fn update_wireframe_config(
     component: Query<&EnableWireframe>,
     mut wireframe_config: ResMut<WireframeConfig>,
 ) {
-    let component = component.single();
-    wireframe_config.global = component.enable;
+    if let Ok(component) = component.single() {
+        wireframe_config.global = component.enable;
+    }
 }

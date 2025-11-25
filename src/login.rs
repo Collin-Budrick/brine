@@ -1,4 +1,4 @@
-use bevy::{app::AppExit, prelude::*};
+use bevy::{app::AppExit, ecs::schedule::IntoScheduleConfigs, prelude::*};
 
 use brine_proto::event::{
     clientbound::{Disconnect, LoginSuccess},
@@ -13,7 +13,7 @@ pub enum GameState {
     Play,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Resource)]
 struct LoginInfo {
     server: String,
     username: String,
@@ -48,16 +48,19 @@ impl Plugin for LoginPlugin {
             .init_state::<GameState>()
             .add_systems(Startup, initiate_login)
             .add_systems(
-                OnUpdate(GameState::Login),
-                (await_success, handle_disconnect),
+                Update,
+                (await_success, handle_disconnect).run_if(in_state(GameState::Login)),
             )
-            .add_systems(OnUpdate(GameState::Play), handle_disconnect);
+            .add_systems(
+                Update,
+                handle_disconnect.run_if(in_state(GameState::Play)),
+            );
     }
 }
 
 fn initiate_login(
     login_info: Res<LoginInfo>,
-    mut login_events: EventWriter<Login>,
+    mut login_events: MessageWriter<Login>,
     mut next_state: ResMut<NextState<GameState>>,
 ) {
     info!("Initiating login");
@@ -69,7 +72,7 @@ fn initiate_login(
 }
 
 fn await_success(
-    mut login_success_events: EventReader<LoginSuccess>,
+    mut login_success_events: MessageReader<LoginSuccess>,
     mut next_state: ResMut<NextState<GameState>>,
 ) {
     if login_success_events.read().last().is_some() {
@@ -80,16 +83,16 @@ fn await_success(
 
 fn handle_disconnect(
     login_info: Res<LoginInfo>,
-    mut disconnect_events: EventReader<Disconnect>,
+    mut disconnect_events: MessageReader<Disconnect>,
     mut next_state: ResMut<NextState<GameState>>,
-    mut app_exit: EventWriter<AppExit>,
+    mut app_exit: MessageWriter<AppExit>,
 ) {
     if let Some(disconnect) = disconnect_events.read().last() {
         info!("Disconnected from server. Reason: {}", disconnect.reason);
         next_state.set(GameState::Idle);
 
         if login_info.exit_on_disconnect {
-            app_exit.write(AppExit);
+            app_exit.write(AppExit::Success);
         }
     }
 }

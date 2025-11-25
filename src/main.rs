@@ -12,8 +12,8 @@ use bevy::{
         RenderPlugin,
     },
 };
-use bevy_fly_camera::{FlyCamera, FlyCameraPlugin};
-use bevy_inspector_egui::prelude::*;
+use bevy_flycam::{FlyCam, NoCameraPlayerPlugin};
+use bevy_inspector_egui::quick::WorldInspectorPlugin;
 use brine_asset::MinecraftAssets;
 use brine_data::MinecraftData;
 use clap::Parser;
@@ -22,8 +22,7 @@ use brine_proto::{AlwaysSuccessfulLoginPlugin, ProtocolPlugin};
 use brine_proto_backend::ProtocolBackendPlugin;
 use brine_voxel_v1::{
     chunk_builder::{
-        component::BuiltChunkSection, ChunkBuilderPlugin, GreedyQuadsChunkBuilder,
-        VisibleFacesChunkBuilder,
+        component::BuiltChunkSection, ChunkBuilderPlugin, VisibleFacesChunkBuilder,
     },
     texture::TextureBuilderPlugin,
 };
@@ -61,6 +60,7 @@ fn main() {
     let mut default_plugins = DefaultPlugins.set(LogPlugin {
         level: Level::DEBUG,
         filter: String::from(DEFAULT_LOG_FILTER),
+        ..default()
     });
 
     if args.debug {
@@ -105,7 +105,7 @@ fn main() {
         app.add_plugins((
             WorldInspectorPlugin::new(),
             DebugWireframePlugin,
-            FrameTimeDiagnosticsPlugin,
+            FrameTimeDiagnosticsPlugin::default(),
             LogDiagnosticsPlugin::default(),
         ));
     }
@@ -118,9 +118,8 @@ pub struct MinecraftWorldViewerPlugin;
 
 impl Plugin for MinecraftWorldViewerPlugin {
     fn build(&self, app: &mut App) {
-        app.insert_resource(Msaa { samples: 4 })
-            .add_plugins((
-                FlyCameraPlugin,
+        app.add_plugins((
+                NoCameraPlayerPlugin,
                 ChunkBuilderPlugin::<VisibleFacesChunkBuilder>::default(),
                 // ChunkBuilderPlugin::<GreedyQuadsChunkBuilder>::default(),
             ))
@@ -137,12 +136,13 @@ fn set_up_camera(mut commands: Commands) {
     // let camera_start = Transform::from_translation(Vec3::new(-260.0, 115.0, 200.0))
     //     .looking_at(Vec3::new(-40.0, 100.0, 0.0), Vec3::Y);
 
-    commands
-        .spawn(Camera3dBundle {
-            transform: camera_start,
-            ..Default::default()
-        })
-        .insert(FlyCamera::default());
+    commands.spawn((
+        Camera3d::default(),
+        Msaa::Sample4,
+        FlyCam,
+        camera_start,
+        GlobalTransform::default(),
+    ));
 }
 
 fn give_chunk_sections_correct_y_height(mut query: Query<(&mut Transform, &BuiltChunkSection)>) {

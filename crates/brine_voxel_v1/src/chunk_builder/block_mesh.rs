@@ -105,13 +105,12 @@ impl BlockState {
 
 impl Voxel for BlockState {
     #[inline]
-    fn is_empty(&self) -> bool {
-        *self == Self::EMPTY
-    }
-
-    #[inline]
-    fn is_opaque(&self) -> bool {
-        true
+    fn get_visibility(&self) -> block_mesh::VoxelVisibility {
+        if *self == Self::EMPTY {
+            block_mesh::VoxelVisibility::Empty
+        } else {
+            block_mesh::VoxelVisibility::Opaque
+        }
     }
 }
 

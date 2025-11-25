@@ -36,7 +36,7 @@ impl Plugin for ProtocolBackendPlugin {
     }
 }
 
-fn log_network_errors(mut event_reader: EventReader<NetworkEvent<ProtocolCodec>>) {
+fn log_network_errors(mut event_reader: MessageReader<NetworkEvent<ProtocolCodec>>) {
     for event in event_reader.read() {
         if let NetworkEvent::Error(network_error) = event {
             warn!("Network error: {}", network_error);

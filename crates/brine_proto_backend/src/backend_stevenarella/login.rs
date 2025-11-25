@@ -34,7 +34,7 @@
 
 use std::str::FromStr;
 
-use bevy::{app::OnUpdate, prelude::*};
+use bevy::{ecs::schedule::IntoScheduleConfigs, prelude::*};
 use steven_protocol::protocol::{Serializable, VarInt};
 
 use brine_net::{CodecReader, CodecWriter, NetworkError, NetworkEvent, NetworkResource};
@@ -66,6 +66,7 @@ enum LoginState {
 }
 
 /// Keeps data around that is needed by systems occurring later in the state machine.
+#[derive(Resource)]
 struct LoginResource {
     username: String,
     server_addr: String,
@@ -92,8 +93,8 @@ fn make_handshake_packet(protocol_version: i32, next_state: i32) -> Packet {
 
 /// System that listens for any connection failure event and emits a LoginFailure event.
 fn handle_connection_error(
-    mut network_events: EventReader<NetworkEvent<ProtocolCodec>>,
-    mut login_failure_events: EventWriter<Disconnect>,
+    mut network_events: MessageReader<NetworkEvent<ProtocolCodec>>,
+    mut login_failure_events: MessageWriter<Disconnect>,
     mut login_state: ResMut<NextState<LoginState>>,
 ) {
     for event in network_events.read() {
@@ -104,7 +105,7 @@ fn handle_connection_error(
                 reason: format!("Connection failed: {}", io_error),
             });
 
-            login_state.set(LoginState::Idle).unwrap();
+            login_state.set(LoginState::Idle);
             break;
         }
     }
@@ -115,28 +116,31 @@ mod protocol_discovery {
 
     pub(crate) fn build(app: &mut App) {
         app.add_systems(
-            OnUpdate(LoginState::Idle),
-            await_login_event_then_connect,
+            Update,
+            await_login_event_then_connect.run_if(in_state(LoginState::Idle)),
         );
         app.add_systems(
-            OnUpdate(LoginState::StatusAwaitingConnect),
+            Update,
             (
                 handle_connection_error,
                 await_connect_then_send_handshake_and_status_request,
-            ),
+            )
+                .run_if(in_state(LoginState::StatusAwaitingConnect)),
         );
         app.add_systems(
-            OnUpdate(LoginState::StatusAwaitingResponse),
-            await_response_then_send_status_ping,
+            Update,
+            await_response_then_send_status_ping
+                .run_if(in_state(LoginState::StatusAwaitingResponse)),
         );
         app.add_systems(
-            OnUpdate(LoginState::StatusAwaitingDisconnect),
-            await_disconnect_then_connect_for_login,
+            Update,
+            await_disconnect_then_connect_for_login
+                .run_if(in_state(LoginState::StatusAwaitingDisconnect)),
         );
     }
 
     fn await_login_event_then_connect(
-        mut login_events: EventReader<Login>,
+        mut login_events: MessageReader<Login>,
         mut login_state: ResMut<NextState<LoginState>>,
         mut net_resource: ResMut<NetworkResource<ProtocolCodec>>,
         mut commands: Commands,
@@ -157,7 +161,7 @@ mod protocol_discovery {
     }
 
     fn await_connect_then_send_handshake_and_status_request(
-        mut network_events: EventReader<NetworkEvent<ProtocolCodec>>,
+        mut network_events: MessageReader<NetworkEvent<ProtocolCodec>>,
         mut packet_writer: CodecWriter<ProtocolCodec>,
         mut login_state: ResMut<NextState<LoginState>>,
         net_resource: Res<NetworkResource<ProtocolCodec>>,
@@ -216,7 +220,7 @@ mod protocol_discovery {
     }
 
     fn await_disconnect_then_connect_for_login(
-        mut network_events: EventReader<NetworkEvent<ProtocolCodec>>,
+        mut network_events: MessageReader<NetworkEvent<ProtocolCodec>>,
         mut login_state: ResMut<NextState<LoginState>>,
         mut net_resource: ResMut<NetworkResource<ProtocolCodec>>,
         login_resource: Res<LoginResource>,
@@ -239,15 +243,16 @@ mod login {
 
     pub(crate) fn build(app: &mut App) {
         app.add_systems(
-            OnUpdate(LoginState::LoginAwaitingConnect),
+            Update,
             (
                 handle_connection_error,
                 await_connect_then_send_handshake_and_login_start,
-            ),
+            )
+                .run_if(in_state(LoginState::LoginAwaitingConnect)),
         );
         app.add_systems(
-            OnUpdate(LoginState::LoginAwaitingSuccess),
-            await_login_success,
+            Update,
+            await_login_success.run_if(in_state(LoginState::LoginAwaitingSuccess)),
         );
     }
 
@@ -260,7 +265,7 @@ mod login {
     /// System that listens for a successful connection event and then sends the
     /// first two packets of the login exchange.
     fn await_connect_then_send_handshake_and_login_start(
-        mut network_events: EventReader<NetworkEvent<ProtocolCodec>>,
+        mut network_events: MessageReader<NetworkEvent<ProtocolCodec>>,
         mut packet_writer: CodecWriter<ProtocolCodec>,
         mut login_state: ResMut<NextState<LoginState>>,
         login_resource: Res<LoginResource>,
@@ -291,8 +296,8 @@ mod login {
     /// emits the proper event in response.
     fn await_login_success(
         mut packet_reader: CodecReader<ProtocolCodec>,
-        mut login_success_events: EventWriter<LoginSuccess>,
-        mut disconnect_events: EventWriter<Disconnect>,
+        mut login_success_events: MessageWriter<LoginSuccess>,
+        mut disconnect_events: MessageWriter<Disconnect>,
         mut login_state: ResMut<NextState<LoginState>>,
     ) {
         let mut on_login_success = |username: String, uuid: Uuid| {
@@ -343,8 +348,9 @@ mod play {
 
     pub(crate) fn build(app: &mut App) {
         app.add_systems(
-            OnUpdate(LoginState::Play),
-            (respond_to_keep_alive_packets, handle_disconnect),
+            Update,
+            (respond_to_keep_alive_packets, handle_disconnect)
+                .run_if(in_state(LoginState::Play)),
         );
     }
 
@@ -383,7 +389,7 @@ mod play {
 
     fn handle_disconnect(
         mut packet_reader: CodecReader<ProtocolCodec>,
-        mut disconnect_events: EventWriter<Disconnect>,
+        mut disconnect_events: MessageWriter<Disconnect>,
     ) {
         for packet in packet_reader.iter() {
             if let Packet::Known(packet::Packet::Disconnect(disconnect)) = packet {

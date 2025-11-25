@@ -1,9 +1,7 @@
 //! Implementation of a chunk builder that just generates a cube for each block.
 
-use bevy::{
-    prelude::*,
-    render::mesh::{indices::Indices, vertex::VertexAttributeValues},
-};
+use bevy::{math::primitives::Cuboid, prelude::*};
+use bevy_mesh::{Indices, VertexAttributeValues};
 
 use brine_chunk::{BlockState, Chunk, ChunkSection};
 
@@ -81,19 +79,19 @@ impl NaiveBlocksChunkBuilder {
     }
 
     fn get_cube_mesh(x: u8, y: u8, z: u8) -> Mesh {
-        let x = x as f32;
-        let y = y as f32;
-        let z = z as f32;
-        let cube = bevy::prelude::shape::Box {
-            min_x: x,
-            max_x: x + 1.0,
-            min_y: y,
-            max_y: y + 1.0,
-            min_z: z,
-            max_z: z + 1.0,
-        };
+        let mut mesh = Mesh::from(Cuboid::new(1.0, 1.0, 1.0));
+        if let Some(VertexAttributeValues::Float32x3(positions)) =
+            mesh.attribute_mut(Mesh::ATTRIBUTE_POSITION)
+        {
+            let offset = Vec3::new(x as f32 + 0.5, y as f32 + 0.5, z as f32 + 0.5);
+            for position in positions.iter_mut() {
+                position[0] += offset.x;
+                position[1] += offset.y;
+                position[2] += offset.z;
+            }
+        }
 
-        Mesh::from(cube)
+        mesh
     }
 
     fn get_axis_from_normal(normal: [f32; 3]) -> Axis {

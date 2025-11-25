@@ -3,11 +3,11 @@ use bevy::{
     pbr::wireframe::{WireframeConfig, WireframePlugin},
     prelude::*,
     render::{
-        mesh::indices::Indices,
         options::WgpuOptions,
         render_resource::{PrimitiveTopology, WgpuFeatures},
     },
 };
+use bevy_mesh::Indices;
 
 use brine_voxel::Mesh as VoxelMesh;
 

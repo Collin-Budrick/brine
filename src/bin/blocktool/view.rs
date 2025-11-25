@@ -1,10 +1,15 @@
+use std::str::FromStr;
+
 use bevy::{
     asset::RenderAssetUsages,
+    input::ButtonInput,
+    pbr::MeshMaterial3d,
     prelude::*,
-    render::{mesh::indices::Indices, render_resource::PrimitiveTopology},
-    sprite::Rect,
+    render::render_resource::PrimitiveTopology,
 };
-use bevy_inspector_egui::WorldInspectorPlugin;
+use bevy::math::{primitives::Cuboid, Rect};
+use bevy_mesh::{Indices, Mesh3d};
+use bevy_inspector_egui::quick::WorldInspectorPlugin;
 
 use brine::debug::DebugWireframePlugin;
 use brine_asset::{BakedModel, BlockFace, MinecraftAssets};
@@ -23,11 +28,11 @@ pub struct Args {
     block_reference: String,
 
     /// Optionally show only a specific face.
-    #[clap(long, parse(from_str = ShowFaces::parse))]
+    #[arg(long)]
     show_faces: Option<ShowFaces>,
 }
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, Resource)]
 struct ShowFaces {
     pub down: bool,
     pub up: bool,
@@ -119,6 +124,14 @@ impl ShowFaces {
     }
 }
 
+impl FromStr for ShowFaces {
+    type Err = String;
+
+    fn from_str(value: &str) -> Result<Self, Self::Err> {
+        Ok(Self::parse(value))
+    }
+}
+
 pub(crate) fn main(args: Args) {
     let show_faces = args.show_faces.unwrap_or_else(ShowFaces::all);
 
@@ -138,24 +151,23 @@ fn display_block(block_reference: &str, show_faces: ShowFaces) {
 
     App::new()
         .add_plugins(DefaultPlugins)
-        .insert_resource(Msaa { samples: 4 })
-        .add_plugin(DebugWireframePlugin)
-        .add_plugin(WorldInspectorPlugin::new())
+        .add_plugins(DebugWireframePlugin)
+        .add_plugins(WorldInspectorPlugin::new())
         .insert_resource(show_faces)
         .insert_resource(mc_data)
         .insert_resource(mc_assets)
-        .add_plugin(TextureManagerPlugin)
-        .add_plugin(MinecraftTexturesPlugin)
+        .add_plugins(TextureManagerPlugin)
+        .add_plugins(MinecraftTexturesPlugin)
         .insert_resource(TheBlocks::new(block_state_ids))
         .add_systems(OnEnter(MinecraftTexturesState::Loaded), setup)
         .add_systems(
-            OnUpdate(MinecraftTexturesState::Loaded),
-            next_block_state,
+            Update,
+            next_block_state.run_if(in_state(MinecraftTexturesState::Loaded)),
         )
         .run();
 }
 
-#[derive(Debug)]
+#[derive(Debug, Resource)]
 struct TheBlocks {
     block_state_ids: Vec<BlockStateId>,
     index: usize,
@@ -200,66 +212,67 @@ fn setup(
     mut materials: ResMut<Assets<StandardMaterial>>,
     mut commands: Commands,
 ) {
-    commands.spawn(PerspectiveCameraBundle {
-        transform: Transform::from_translation(Vec3::new(4.0, 3.0, 4.0))
-            .looking_at(Vec3::ZERO, Vec3::Y),
-        ..Default::default()
-    });
+    commands.spawn((
+        Camera3d::default(),
+        Msaa::Sample4,
+        Transform::from_translation(Vec3::new(4.0, 3.0, 4.0)).looking_at(Vec3::ZERO, Vec3::Y),
+        GlobalTransform::default(),
+    ));
 
-    let origin_cube = Mesh::from(shape::Cube::new(1.0 / 16.0));
+    let origin_cube = Mesh::from(Cuboid::from_size(Vec3::splat(1.0 / 16.0)));
     let origin_material = StandardMaterial {
-        base_color: Color::PINK,
+        base_color: Color::srgb(1.0, 0.0, 1.0),
         unlit: true,
-        ..Default::default()
+        ..default()
     };
-    commands
-        .spawn(PbrBundle {
-            mesh: meshes.add(origin_cube),
-            material: materials.add(origin_material),
-            visibility: Visibility { is_visible: false },
-            ..Default::default()
-        })
-        .insert(Name::new("Origin"));
+    commands.spawn((
+        Mesh3d(meshes.add(origin_cube)),
+        MeshMaterial3d(materials.add(origin_material)),
+        Transform::default(),
+        GlobalTransform::default(),
+        Visibility::Hidden,
+        Name::new("Origin"),
+    ));
 
     spawn_block_state(
         the_blocks.current_block(),
-        &*show_faces,
-        &*mc_data,
-        &*mc_assets,
-        &*texture_manager,
-        &*texture_atlases,
-        &mut *meshes,
-        &mut *materials,
+        show_faces.into_inner(),
+        mc_data.into_inner(),
+        mc_assets.into_inner(),
+        texture_manager.into_inner(),
+        texture_atlases.into_inner(),
+        meshes.into_inner(),
+        materials.into_inner(),
         &mut commands,
     );
 }
 
 fn next_block_state(
-    input: Res<Input<KeyCode>>,
-    mut the_blocks: ResMut<TheBlocks>,
+    input: Res<ButtonInput<KeyCode>>,
+    the_blocks: ResMut<TheBlocks>,
     show_faces: Res<ShowFaces>,
     mc_data: Res<MinecraftData>,
     mc_assets: Res<MinecraftAssets>,
     texture_manager: Res<TextureManager>,
     texture_atlases: Res<Assets<TextureAtlas>>,
     blocks: Query<Entity, With<BlockMarker>>,
-    mut meshes: ResMut<Assets<Mesh>>,
-    mut materials: ResMut<Assets<StandardMaterial>>,
+    meshes: ResMut<Assets<Mesh>>,
+    materials: ResMut<Assets<StandardMaterial>>,
     mut commands: Commands,
 ) {
-    let count = if input.pressed(KeyCode::LShift) {
+    let count = if input.pressed(KeyCode::ShiftLeft) {
         10
     } else {
         1
     };
 
-    let next_block: Box<dyn Fn(&mut TheBlocks)> = if input.just_pressed(KeyCode::Left) {
+    let next_block: Box<dyn Fn(&mut TheBlocks)> = if input.just_pressed(KeyCode::ArrowLeft) {
         Box::new(|b: &mut TheBlocks| {
             for _ in 0..count {
                 b.prev_block()
             }
         })
-    } else if input.just_pressed(KeyCode::Right) {
+    } else if input.just_pressed(KeyCode::ArrowRight) {
         Box::new(|b: &mut TheBlocks| {
             for _ in 0..count {
                 b.next_block()
@@ -269,26 +282,35 @@ fn next_block_state(
         return;
     };
 
+    let the_blocks = the_blocks.into_inner();
+    let show_faces = show_faces.into_inner();
+    let mc_data = mc_data.into_inner();
+    let mc_assets = mc_assets.into_inner();
+    let texture_manager = texture_manager.into_inner();
+    let texture_atlases = texture_atlases.into_inner();
+    let meshes = meshes.into_inner();
+    let materials = materials.into_inner();
+
     // Despawn previous meshes
     for entity in blocks.iter() {
         commands.entity(entity).despawn();
     }
 
-    next_block(&mut *the_blocks);
+    next_block(the_blocks);
 
     while !spawn_block_state(
         the_blocks.current_block(),
-        &*show_faces,
-        &*mc_data,
-        &*mc_assets,
-        &*texture_manager,
-        &*texture_atlases,
-        &mut *meshes,
-        &mut *materials,
+        show_faces,
+        mc_data,
+        mc_assets,
+        texture_manager,
+        texture_atlases,
+        meshes,
+        materials,
         &mut commands,
     ) {
         info!("Skipping {:?}", the_blocks.current_block());
-        next_block(&mut *the_blocks);
+        next_block(the_blocks);
     }
 
     info!("Showing {:?}", the_blocks.current_block());
@@ -336,13 +358,14 @@ fn spawn_block_state(
         };
 
         commands
-            .spawn(PbrBundle {
-                mesh: meshes.add(mesh),
-                material: materials.add(material),
-                ..Default::default()
-            })
-            .insert(Name::new(get_entity_name(block_state_id, mc_data)))
-            .insert(BlockMarker);
+            .spawn((
+                Mesh3d(meshes.add(mesh)),
+                MeshMaterial3d(materials.add(material)),
+                Transform::default(),
+                GlobalTransform::default(),
+                Name::new(get_entity_name(block_state_id, mc_data)),
+                BlockMarker,
+            ));
     }
 
     has_model

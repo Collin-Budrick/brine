@@ -1,8 +1,9 @@
 use bevy::{
     asset::RenderAssetUsages,
     prelude::Mesh,
-    render::{mesh::indices::Indices, render_resource::PrimitiveTopology},
+    render::render_resource::PrimitiveTopology,
 };
+use bevy_mesh::Indices;
 
 use brine_asset::MinecraftAssets;
 use brine_chunk::ChunkSection;
