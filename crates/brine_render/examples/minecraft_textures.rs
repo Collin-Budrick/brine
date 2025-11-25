@@ -9,10 +9,10 @@ use brine_render::texture::{
 };
 
 fn main() {
-    let mc_data = MinecraftData::for_version("1.14.4");
+    let mc_data = MinecraftData::for_version("1.21.4");
 
     println!("Loading asset metadata");
-    let mc_assets = MinecraftAssets::new("assets/1.14.4", &mc_data).unwrap();
+    let mc_assets = MinecraftAssets::new("assets/1.21.4", &mc_data).unwrap();
 
     App::new()
         .insert_resource(AssetServerSettings {

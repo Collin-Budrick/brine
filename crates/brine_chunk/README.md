@@ -8,4 +8,4 @@ This library does two things:
 2. Provides methods to decode chunk data from its various[^1] different
    compressed formats.
 
-[^1]: Eventually. Currently only supports decoding 1.14.4 chunk data.
+[^1]: Eventually. Currently only supports decoding 1.21.4 chunk data.

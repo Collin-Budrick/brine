@@ -1,6 +1,6 @@
 //! A library for decoding Minecraft chunk data from network packets.
 //!
-//! Currently only supports version 1.14.4.
+//! Currently only supports version 1.21.4.
 
 use std::fmt;
 

@@ -139,7 +139,7 @@ pub(crate) fn main(args: Args) {
 }
 
 fn display_block(block_reference: &str, show_faces: ShowFaces) {
-    let mc_data = MinecraftData::for_version("1.14.4");
+    let mc_data = MinecraftData::for_version("1.21.4");
 
     let block_state_ids = parse_block_reference(block_reference, &mc_data);
     println!("Requested to view block states: {:?}", block_state_ids);
@@ -147,7 +147,7 @@ fn display_block(block_reference: &str, show_faces: ShowFaces) {
     println!("Requested faces: {:?}", show_faces);
 
     println!("Loading Assets");
-    let mc_assets = MinecraftAssets::new("assets/1.14.4", &mc_data).unwrap();
+    let mc_assets = MinecraftAssets::new("assets/1.21.4", &mc_data).unwrap();
 
     App::new()
         .add_plugins(DefaultPlugins)

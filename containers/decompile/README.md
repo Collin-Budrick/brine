@@ -1,7 +1,7 @@
 # Decompile Minecraft Binaries
 
 This container uses [`DecompilerMC`](https://github.com/hube12/DecompilerMC) to
-decompile minecraft binaries for versions 1.14.4 or later.
+decompile minecraft binaries for versions 1.21.4 or later.
 
 ## Usage
 
@@ -14,7 +14,7 @@ $ ./decompile-client.sh
 The following environment variables can be set to specify options to the script:
 
 * `VERSION`: Minecraft version of the binary to decompile.
-  * Default: `"1.14.4"`
+  * Default: `"1.21.4"`
 
 * `DESTDIR`: Directory on the host machine to save the decompiled source code
   files to.

@@ -13,7 +13,7 @@ pub(crate) fn main(args: Args) {
 }
 
 fn print_block(block_state_id: BlockStateId) {
-    let data = MinecraftData::for_version("1.14.4");
+    let data = MinecraftData::for_version("1.21.4");
 
     let block = data
         .blocks()

@@ -16,9 +16,9 @@ fn workspace_relative_path(relative_path: impl AsRef<Path>) -> PathBuf {
 }
 
 fn main() {
-    let data = Arc::new(MinecraftData::for_version("1.14.4"));
+    let data = Arc::new(MinecraftData::for_version("1.21.4"));
 
-    let path = workspace_relative_path("../../assets/1.14.4");
+    let path = workspace_relative_path("../../assets/1.21.4");
     println!("{}", path.to_string_lossy());
 
     let _assets = MinecraftAssets::new(path, &data).unwrap();
