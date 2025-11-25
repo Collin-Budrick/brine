@@ -3,4 +3,5 @@
 cargo-timing*
 /data
 /assets/*/
+temp-mc-assets/
 debug.plist
