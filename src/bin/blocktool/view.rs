@@ -384,7 +384,7 @@ fn baked_model_to_mesh(
         indices.extend_from_slice(
             &quad
                 .indices()
-                .map(|index| (positions.len() + index as usize) as u16),
+                .map(|index| (positions.len() + index as usize) as u32),
         );
 
         positions.extend_from_slice(&quad.positions);
@@ -395,10 +395,10 @@ fn baked_model_to_mesh(
     }
 
     let mut mesh = Mesh::new(PrimitiveTopology::TriangleList);
-    mesh.set_attribute(Mesh::ATTRIBUTE_POSITION, positions);
-    mesh.set_attribute(Mesh::ATTRIBUTE_NORMAL, normals);
-    mesh.set_attribute(Mesh::ATTRIBUTE_UV_0, tex_coords);
-    mesh.set_indices(Some(Indices::U16(indices)));
+    mesh.insert_attribute(Mesh::ATTRIBUTE_POSITION, positions);
+    mesh.insert_attribute(Mesh::ATTRIBUTE_NORMAL, normals);
+    mesh.insert_attribute(Mesh::ATTRIBUTE_UV_0, tex_coords);
+    mesh.insert_indices(Indices::U32(indices));
 
     mesh
 }
