@@ -39,20 +39,13 @@ fn get_all_textures<'a>(
         .iter()
         .filter_map(|(texture_key, texture_id)| {
             trace!("{texture_key:?}: {texture_id:?}");
-
-            if texture_id.path().starts_with("block/")
-                // || texture_id.path().starts_with("effect/")
-                // || texture_id.path().starts_with("item/")
-                // || texture_id.path().starts_with("mob_effect/")
-                || texture_id.path().starts_with("painting/")
-            // || texture_id.path().starts_with("particle/")
-            {
-                let path = mc_assets.get_texture_path(texture_key).unwrap();
-                let handle = asset_server.load(path);
-                Some((texture_key, handle))
-            } else {
-                None
-            }
+            // Load every declared texture so that new namespaces introduced by
+            // future Minecraft versions are automatically picked up. This keeps
+            // texture coverage aligned with the asset pack instead of a
+            // hard-coded allowlist.
+            let path = mc_assets.get_texture_path(texture_key).unwrap();
+            let handle = asset_server.load(path);
+            Some((texture_key, handle))
         })
 }
 

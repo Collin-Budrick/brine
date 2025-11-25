@@ -83,33 +83,83 @@ impl TextureManager {
             return;
         }
 
-        self.pending_atlases.retain(|pending_atlas| {
-            let is_ready = pending_atlas.all_textures_loaded(textures);
+        let mut remaining_pending = Vec::new();
+        let mut new_pending = Vec::new();
 
-            if is_ready {
-                let atlas_handle = pending_atlas.handle.clone();
-                let atlas = TextureAtlas::stitch(
-                    textures,
-                    pending_atlas
-                        .textures
-                        .iter()
-                        .map(|(key, handle)| (*key, handle)),
-                    &self.placeholder_texture,
-                    self.max_texture_size,
-                );
-
-                let index = self.atlases.len();
-                for texture_key in atlas.regions.keys() {
-                    self.key_to_atlas.insert(*texture_key, index);
-                }
-
-                atlases.insert(atlas_handle.id(), atlas).unwrap();
-                self.atlases.push(atlas_handle);
+        for pending_atlas in self.pending_atlases.drain(..) {
+            if !pending_atlas.all_textures_loaded(textures) {
+                remaining_pending.push(pending_atlas);
+                continue;
             }
 
-            // Remove it from the list if we just stitched it.
-            !is_ready
-        });
+            let atlas_handle = pending_atlas.handle.clone();
+            match TextureAtlas::stitch(
+                textures,
+                pending_atlas
+                    .textures
+                    .iter()
+                    .map(|(key, handle)| (*key, handle)),
+                &self.placeholder_texture,
+                self.max_texture_size,
+            ) {
+                Ok(atlas) => {
+                    self.register_atlas(atlas_handle, atlas, atlases);
+                }
+                Err(bevy::image::TextureAtlasBuilderError::NotEnoughSpace)
+                    if pending_atlas.textures.len() > 1 =>
+                {
+                    debug!(
+                        texture_count = pending_atlas.textures.len(),
+                        "Splitting oversized atlas request into smaller batches"
+                    );
+
+                    let mid = pending_atlas.textures.len() / 2;
+                    let (left, right) = pending_atlas.textures.split_at(mid);
+
+                    let mut chunk_handles = Vec::with_capacity(2);
+                    chunk_handles.push(atlas_handle);
+                    chunk_handles.push(atlases.reserve_handle());
+
+                    for (chunk, handle) in [left, right].into_iter().zip(chunk_handles) {
+                        new_pending.push(PendingAtlas {
+                            handle,
+                            textures: chunk.to_vec(),
+                        });
+                    }
+                }
+                Err(err) => {
+                    warn!(
+                        error = %err,
+                        texture_count = pending_atlas.textures.len(),
+                        "Failed to stitch atlas, falling back to placeholder texture"
+                    );
+
+                    let atlas = TextureAtlas::placeholder_only(
+                        &self.placeholder_texture,
+                        pending_atlas.textures.iter().map(|(key, _)| *key),
+                    );
+                    self.register_atlas(atlas_handle, atlas, atlases);
+                }
+            }
+        }
+
+        remaining_pending.extend(new_pending);
+        self.pending_atlases = remaining_pending;
+    }
+
+    fn register_atlas(
+        &mut self,
+        handle: Handle<TextureAtlas>,
+        atlas: TextureAtlas,
+        atlases: &mut Assets<TextureAtlas>,
+    ) {
+        let index = self.atlases.len();
+        for texture_key in atlas.regions.keys() {
+            self.key_to_atlas.insert(*texture_key, index);
+        }
+
+        atlases.insert(handle.id(), atlas).unwrap();
+        self.atlases.push(handle);
     }
 }
 
