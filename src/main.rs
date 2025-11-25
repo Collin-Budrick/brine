@@ -41,6 +41,10 @@ struct Args {
     /// Run with a fake server that serves chunks from a directory of chunk files.
     #[clap(name = "chunks", long, value_name = "CHUNK_DIR")]
     chunk_dir: Option<PathBuf>,
+
+    /// Address of the server to connect to (host:port). Defaults to localhost:25565.
+    #[clap(long, value_name = "HOST:PORT")]
+    server: Option<String>,
 }
 
 fn main() {
@@ -65,12 +69,14 @@ fn main() {
         app.add_plugin(ServeChunksFromDirectoryPlugin::new(chunk_dir));
     } else {
         app.add_plugin(ProtocolBackendPlugin);
+        let server = args.server.clone().unwrap_or_else(|| SERVER.to_string());
         app.add_plugin(
-            LoginPlugin::new(SERVER.to_string(), USERNAME.to_string()).exit_on_disconnect(),
+            LoginPlugin::new(server, USERNAME.to_string()).exit_on_disconnect(),
         );
     }
 
     let mc_data = MinecraftData::for_version("1.14.4");
+    // Point at the vanilla 1.14.4 assets directory (contains assets/, data/, pack.mcmeta).
     let mc_assets = MinecraftAssets::new("assets/1.14.4", &mc_data).unwrap();
     app.insert_resource(mc_data);
     app.insert_resource(mc_assets);

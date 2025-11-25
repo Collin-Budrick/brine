@@ -1,9 +1,11 @@
 use std::{
-    io::{self, Cursor, Write},
+    borrow::Cow,
+    io::{self, Cursor, Read, Write},
     ops::Deref,
 };
 
 use bevy::log;
+use flate2::{read::ZlibDecoder, write::ZlibEncoder, Compression};
 use steven_protocol::protocol::{self, State, VarInt};
 pub use steven_protocol::protocol::{packet, Direction, Error, PacketType, Serializable};
 
@@ -62,6 +64,7 @@ impl MinecraftCodec {
         protocol_version: i32,
         protocol_state: MinecraftProtocolState,
         direction: Direction,
+        compression_threshold: Option<i32>,
         buf: impl AsRef<[u8]>,
     ) -> Result<(usize, Packet), Error> {
         let buf = buf.as_ref();
@@ -85,21 +88,45 @@ impl MinecraftCodec {
             )));
         }
 
-        // Next field is the packet id.
-        let id = VarInt::read_from(&mut cursor)?.0;
-        // Take note of how many bytes the `id` field took up.
-        let id_length = cursor.position() as usize - length_length;
-
         // The rest of the packet is the actual packet data.
-        let data_start = cursor.position() as usize;
-        let data_length = length - id_length;
-        let data_slice = &buf[data_start..data_start + data_length];
+        let packet_body = &buf[length_length..length_length + length];
+
+        let mut body_bytes: Cow<[u8]> = Cow::Borrowed(packet_body);
+
+        if compression_threshold.is_some() {
+            let mut body_cursor = Cursor::new(packet_body);
+            let data_length = VarInt::read_from(&mut body_cursor)?.0 as usize;
+            let remaining = &packet_body[body_cursor.position() as usize..];
+
+            if data_length == 0 {
+                body_bytes = Cow::Borrowed(remaining);
+            } else {
+                let mut decoder = ZlibDecoder::new(remaining);
+                let mut data = Vec::with_capacity(data_length);
+                decoder.read_to_end(&mut data)?;
+
+                if data_length != 0 && data.len() != data_length {
+                    log::warn!(
+                        "Decompressed packet length mismatch (expected {}, got {})",
+                        data_length,
+                        data.len()
+                    );
+                }
+
+                body_bytes = Cow::Owned(data);
+            }
+        }
+
+        let mut id_cursor = Cursor::new(body_bytes.as_ref());
+        let packet_id = VarInt::read_from(&mut id_cursor)?.0;
+        let data_start = id_cursor.position() as usize;
+        let data_slice = &body_bytes.as_ref()[data_start..];
 
         let packet = Self::decode_packet_with_id(
             protocol_version,
             protocol_state,
             direction,
-            id,
+            packet_id,
             data_slice,
         )?;
 
@@ -134,8 +161,33 @@ impl MinecraftCodec {
             }),
         })?;
 
-        // All of the data should have been read.
-        assert_eq!(cursor.position() as usize, buf.len());
+        // All of the data should have been read but older packet definitions
+        // don't necessarily include newly added trailing fields. Don't crash
+        // in that case; just log the mismatch so we know something was skipped.
+        let consumed = cursor.position() as usize;
+        let total = buf.len();
+        if consumed != total {
+            match &packet {
+                Packet::Known(_) => log::warn!(
+                    "Decoded packet id={} state={:?} dir={:?} consumed {} of {} bytes (protocol {})",
+                    packet_id,
+                    protocol_state,
+                    direction,
+                    consumed,
+                    total,
+                    protocol_version
+                ),
+                Packet::Unknown(_) => {
+                    log::debug!(
+                        "Unknown packet id={} state={:?} dir={:?} left {} unread bytes",
+                        packet_id,
+                        protocol_state,
+                        direction,
+                        total.saturating_sub(consumed)
+                    );
+                }
+            }
+        }
 
         Ok(packet)
     }
@@ -144,6 +196,7 @@ impl MinecraftCodec {
         protocol_version: i32,
         packet: &Packet,
         mut buf: impl AsMut<[u8]>,
+        compression_threshold: Option<i32>,
     ) -> Result<usize, Error> {
         match packet {
             Packet::Known(packet) => {
@@ -151,12 +204,29 @@ impl MinecraftCodec {
 
                 let mut id_and_data = Vec::new();
                 Self::encode_packet_id_and_data(protocol_version, packet, &mut id_and_data)?;
-                let length = id_and_data.len();
 
-                VarInt(length as i32).write_to(&mut cursor)?;
+                let payload: Cow<[u8]> = if let Some(threshold) = compression_threshold {
+                    let mut body = Vec::new();
+                    if threshold >= 0 && id_and_data.len() >= threshold as usize {
+                        VarInt(id_and_data.len() as i32).write_to(&mut body)?;
+                        let mut encoder =
+                            ZlibEncoder::new(Vec::new(), Compression::default());
+                        encoder.write_all(&id_and_data)?;
+                        let compressed = encoder.finish()?;
+                        body.extend_from_slice(&compressed);
+                    } else {
+                        VarInt(0).write_to(&mut body)?;
+                        body.extend_from_slice(&id_and_data);
+                    }
+                    Cow::Owned(body)
+                } else {
+                    Cow::Borrowed(&id_and_data)
+                };
+
+                VarInt(payload.len() as i32).write_to(&mut cursor)?;
                 let length_length = cursor.position() as usize;
 
-                let total_packet_bytes = length_length + length;
+                let total_packet_bytes = length_length + payload.len();
                 if cursor.get_ref().len() < total_packet_bytes {
                     return Err(Error::IOError(io::Error::new(
                         io::ErrorKind::UnexpectedEof,
@@ -164,7 +234,7 @@ impl MinecraftCodec {
                     )));
                 }
 
-                cursor.write_all(&id_and_data[..])?;
+                cursor.write_all(payload.as_ref())?;
 
                 assert_eq!(cursor.position() as usize, total_packet_bytes);
 
@@ -257,6 +327,8 @@ impl MinecraftClientCodec<MinecraftCodec> {
             // On a Handshake packet, set the protocol state to whatever is
             // specified by the `next` field.
             Packet::Known(packet::Packet::Handshake(handshake)) => {
+                // Each handshake starts a fresh connection, so compression gets reset.
+                self.set_compression_threshold(None);
                 if let Some(next_state) = match handshake.next.0 {
                     HANDSHAKE_STATUS_NEXT => Some(MinecraftProtocolState::Status),
                     HANDSHAKE_LOGIN_NEXT => Some(MinecraftProtocolState::Login),
@@ -285,6 +357,18 @@ impl MinecraftClientCodec<MinecraftCodec> {
                 self.set_protocol_version(protocol_version);
             }
 
+            Packet::Known(packet::Packet::SetCompression(set_compression)) => {
+                let threshold = set_compression.threshold.0;
+                log::debug!("Codec enabling compression (threshold {})", threshold);
+                self.set_compression_threshold(Some(threshold));
+            }
+
+            Packet::Known(packet::Packet::SetInitialCompression(set_compression)) => {
+                let threshold = set_compression.threshold.0;
+                log::debug!("Codec enabling compression (threshold {})", threshold);
+                self.set_compression_threshold(Some(threshold));
+            }
+
             // On a LoginSuccess packet, advance to state Play.
             Packet::Known(
                 packet::Packet::LoginSuccess_String(_) | packet::Packet::LoginSuccess_UUID(_),
@@ -307,6 +391,7 @@ impl Decode for MinecraftClientCodec<MinecraftCodec> {
             self.protocol_version(),
             self.protocol_state(),
             Direction::Clientbound,
+            self.compression_threshold(),
             buf,
         );
 
@@ -327,7 +412,13 @@ impl Encode for MinecraftClientCodec<MinecraftCodec> {
 
         let len = buf.len();
 
-        MinecraftCodec::encode_packet(self.protocol_version(), packet, buf).into_encode_result(len)
+        MinecraftCodec::encode_packet(
+            self.protocol_version(),
+            packet,
+            buf,
+            self.compression_threshold(),
+        )
+        .into_encode_result(len)
     }
 }
 
@@ -384,9 +475,11 @@ mod test {
     async fn test_login_start() {
         do_packet_encode_test(
             MinecraftClientCodec::new(MinecraftProtocolState::Login),
-            packet::Packet::LoginStart(Box::new(packet::login::serverbound::LoginStart {
-                username: String::from("Username"),
-            })),
+            packet::Packet::LoginStart(Box::new(
+                packet::login::serverbound::LoginStart {
+                    username: String::from("Username"),
+                },
+            )),
             include_bytes!("../../test/packet-data/login/login_start.dat"),
         )
         .await;

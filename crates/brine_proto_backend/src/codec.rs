@@ -74,6 +74,8 @@ pub struct CodecState {
     protocol_state: AtomicU8,
     /// See note in [`brine_net`] docs to see why this needs to be atomic.
     protocol_version: AtomicI32,
+    /// Compression threshold negotiated via the SetCompression packet.
+    compression_threshold: AtomicI32,
 }
 
 impl Default for CodecState {
@@ -83,6 +85,7 @@ impl Default for CodecState {
             protocol_version: AtomicI32::new(
                 get_protocol_version(DEFAULT_PROTOCOL_VERSION_STRING).unwrap(),
             ),
+            compression_threshold: AtomicI32::new(-1),
         }
     }
 }
@@ -121,6 +124,22 @@ impl CodecState {
     pub fn set_protocol_version(&self, protocol_version: i32) {
         self.protocol_version
             .store(protocol_version, Ordering::Relaxed)
+    }
+
+    pub fn compression_threshold(&self) -> Option<i32> {
+        match self
+            .compression_threshold
+            .load(Ordering::Relaxed)
+        {
+            -1 => None,
+            value => Some(value),
+        }
+    }
+
+    pub fn set_compression_threshold(&self, threshold: Option<i32>) {
+        let value = threshold.unwrap_or(-1);
+        self.compression_threshold
+            .store(value, Ordering::Relaxed);
     }
 }
 

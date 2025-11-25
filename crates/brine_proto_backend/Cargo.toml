@@ -12,6 +12,7 @@ brine_chunk = { path = "../brine_chunk" }
 brine_net = { path = "../brine_net" }
 brine_proto = { path = "../brine_proto" }
 steven_protocol = { path = "../../third_party/stevenarella/protocol", default-features = false }
+flate2 = { version = "1", default-features = false, features = ["rust_backend"] }
 
 [dev-dependencies]
 assert_matches = "1"

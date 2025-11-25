@@ -17,15 +17,15 @@ members = [
 opt-level = 3
 
 [dependencies]
-bevy = { version = "0.6.1", features = ["dynamic"] }
-bevy_fly_camera = "0.8"
-bevy-inspector-egui = "0.7"
-clap = { version = "3", features = ["derive"] }
-futures-lite = "1"
-serde = "1"
-serde_json = "1"
+bevy = { version = "0.17.3", features = ["dynamic"] }
+bevy_fly_camera = "0.16.0"
+bevy-inspector-egui = "0.35.0"
+clap = { version = "4.5.53", features = ["derive"] }
+futures-lite = "2.6.1"
+serde = "1.0.228"
+serde_json = "1.0.145"
 steven_protocol = { path = "./third_party/stevenarella/protocol", default-features = false }
-thiserror = "1"
+thiserror = "2.0.17"
 
 brine_asset = { path = "./crates/brine_asset" }
 brine_chunk = { path = "./crates/brine_chunk" }
@@ -36,3 +36,7 @@ brine_proto_backend = { path = "./crates/brine_proto_backend" }
 brine_render = { path = "./crates/brine_render" }
 brine_voxel = { path = "./crates/brine_voxel" }
 brine_voxel_v1 = { path = "./crates/brine_voxel_v1" }
+
+[patch.crates-io]
+bevy_ecs = { path = "third_party/bevy_ecs-0.6.0-patched" }
+winit = { path = "third_party/winit-0.26.1-patched" }
