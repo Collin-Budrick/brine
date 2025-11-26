@@ -1,4 +1,5 @@
-use bevy::prelude::*;
+use bevy::{prelude::*, DefaultPlugins};
+use bevy_image::TextureAtlasLayout;
 
 use brine_asset::{BlockFace, MinecraftAssets};
 
@@ -13,62 +14,75 @@ fn main() {
         .add_plugins(DefaultPlugins)
         .insert_resource(mc_data)
         .insert_resource(mc_assets)
-        .add_plugin(TextureBuilderPlugin)
-        .add_state(AppState::Loading)
+        .add_plugins(TextureBuilderPlugin)
+        .insert_state(AppState::default())
         .init_resource::<Atlas>()
-        .add_startup_system(load_atlas)
-        .add_system_set(SystemSet::on_enter(AppState::Loading).with_system(load_atlas))
-        .add_system_set(SystemSet::on_update(AppState::Loading).with_system(check_atlas))
-        .add_system_set(SystemSet::on_enter(AppState::Finished).with_system(setup))
+        .add_systems(Startup, load_atlas)
+        .add_systems(OnEnter(AppState::Loading), load_atlas)
+        .add_systems(Update, check_atlas.run_if(in_state(AppState::Loading)))
+        .add_systems(OnEnter(AppState::Finished), setup)
         .run();
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+#[derive(States, Default, Debug, Clone, PartialEq, Eq, Hash)]
 enum AppState {
+    #[default]
     Loading,
     Finished,
 }
 
-#[derive(Default)]
+#[derive(Default, Resource)]
 struct Atlas {
-    handle: Option<Handle<TextureAtlas>>,
+    texture: Option<Handle<Image>>,
+    #[allow(dead_code)]
+    layout: Option<Handle<TextureAtlasLayout>>,
 }
 
 fn load_atlas(
     mc_assets: Res<MinecraftAssets>,
-    asset_server: ResMut<AssetServer>,
+    asset_server: Res<AssetServer>,
     mut block_textures: ResMut<BlockTextures>,
     mut atlas: ResMut<Atlas>,
+    mut atlas_images: ResMut<Assets<Image>>,
+    mut atlas_layouts: ResMut<Assets<TextureAtlasLayout>>,
 ) {
     let block_states = (1..500).map(BlockStateId);
 
-    let atlas_handle = block_textures.create_texture_atlas(block_states, &asset_server, |b| {
-        mc_assets.get_texture_path_for_block_state_and_face(b, BlockFace::South)
-    });
+    let (atlas_texture, atlas_layout) =
+        block_textures.create_texture_atlas(
+            block_states,
+            &asset_server,
+            |b| mc_assets.get_texture_path_for_block_state_and_face(b, BlockFace::South),
+            &mut atlas_images,
+            &mut atlas_layouts,
+        );
 
-    atlas.handle = Some(atlas_handle);
+    atlas.texture = Some(atlas_texture);
+    atlas.layout = Some(atlas_layout);
 }
 
 fn check_atlas(
     atlas: Res<Atlas>,
-    texture_atlases: Res<Assets<TextureAtlas>>,
-    mut app_state: ResMut<State<AppState>>,
+    textures: Res<Assets<Image>>,
+    mut next_state: ResMut<NextState<AppState>>,
 ) {
-    if texture_atlases.contains(atlas.handle.as_ref().unwrap()) {
-        app_state.set(AppState::Finished).unwrap();
+    if atlas
+        .texture
+        .as_ref()
+        .is_some_and(|handle| textures.contains(handle))
+    {
+        next_state.set(AppState::Finished);
     }
 }
 
-fn setup(atlas: Res<Atlas>, texture_atlases: Res<Assets<TextureAtlas>>, mut commands: Commands) {
-    let texture_atlas = texture_atlases.get(atlas.handle.as_ref().unwrap()).unwrap();
+fn setup(atlas: Res<Atlas>, mut commands: Commands) {
+    let texture_atlas_texture = atlas.texture.clone().unwrap();
 
-    let texture_atlas_texture = texture_atlas.texture.clone();
+    commands.spawn((Camera2d, Msaa::Sample4, Transform::default(), GlobalTransform::default()));
 
-    commands.spawn_bundle(OrthographicCameraBundle::new_2d());
-
-    commands.spawn_bundle(SpriteBundle {
-        texture: texture_atlas_texture,
-        transform: Transform::from_xyz(0.0, 0.0, 0.0).with_scale(Vec3::ONE * 2.0),
-        ..Default::default()
-    });
+    commands.spawn((
+        Sprite::from_image(texture_atlas_texture),
+        Transform::from_xyz(0.0, 0.0, 0.0).with_scale(Vec3::ONE * 2.0),
+        GlobalTransform::default(),
+    ));
 }

@@ -4,7 +4,7 @@ use brine_chunk::{decode::Result, BlockState, Chunk, Palette};
 use brine_net::CodecReader;
 use brine_proto::event;
 
-use super::codec::{packet, Packet, ProtocolCodec};
+use super::codec::{Packet, ProtocolCodec};
 
 /// A dummy palette for testing that performs no translation.
 pub struct DummyPalette;

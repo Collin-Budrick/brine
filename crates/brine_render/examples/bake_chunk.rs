@@ -1,9 +1,21 @@
 use bevy::{
-    pbr::wireframe::{WireframeConfig, WireframePlugin},
-    prelude::*,
-    render::{options::WgpuOptions, render_resource::WgpuFeatures},
+    pbr::{
+        wireframe::{WireframeConfig, WireframePlugin},
+        MeshMaterial3d,
+    },
+    prelude::{
+        default, App, Assets, Camera3d, Color, Commands, GlobalTransform, Mesh, Msaa, PluginGroup,
+        Res, ResMut, StandardMaterial, Startup, Transform, Vec3,
+    },
+    render::{
+        render_resource::WgpuFeatures,
+        settings::{RenderCreation, WgpuSettings},
+        RenderPlugin,
+    },
+    DefaultPlugins,
 };
-use bevy_inspector_egui::WorldInspectorPlugin;
+use bevy_inspector_egui::quick::WorldInspectorPlugin;
+use bevy_mesh::Mesh3d;
 
 use brine_asset::MinecraftAssets;
 use brine_chunk::{BlockState, BlockStates, ChunkSection, BLOCKS_PER_SECTION};
@@ -15,18 +27,22 @@ fn main() {
     let mc_assets = MinecraftAssets::new("assets/1.21.4", &mc_data).unwrap();
 
     App::new()
-        .add_plugins(DefaultPlugins)
-        .insert_resource(Msaa { samples: 4 })
-        .insert_resource(WgpuOptions {
-            features: WgpuFeatures::POLYGON_MODE_LINE,
-            ..Default::default()
+        .add_plugins(DefaultPlugins.set(RenderPlugin {
+            render_creation: RenderCreation::Automatic(WgpuSettings {
+                features: WgpuFeatures::POLYGON_MODE_LINE,
+                ..default()
+            }),
+            ..default()
+        }))
+        .insert_resource(WireframeConfig {
+            global: true,
+            default_color: Color::WHITE,
         })
-        .insert_resource(WireframeConfig { global: true })
-        .add_plugin(WireframePlugin)
-        .add_plugin(WorldInspectorPlugin::new())
+        .add_plugins(WireframePlugin::default())
+        .add_plugins(WorldInspectorPlugin::new())
         .insert_resource(mc_data)
         .insert_resource(mc_assets)
-        .add_startup_system(setup)
+        .add_systems(Startup, setup)
         .run();
 }
 
@@ -65,20 +81,28 @@ fn setup(
     mc_data: Res<MinecraftData>,
     mc_assets: Res<MinecraftAssets>,
     mut meshes: ResMut<Assets<Mesh>>,
+    mut materials: ResMut<Assets<StandardMaterial>>,
     mut commands: Commands,
 ) {
     let chunk = random_chunk();
 
     let mesh = bake_chunk(&chunk, &*mc_data, &*mc_assets);
 
-    commands.spawn_bundle(PbrBundle {
-        mesh: meshes.add(mesh),
-        ..Default::default()
-    });
+    commands.spawn((
+        Mesh3d(meshes.add(mesh)),
+        MeshMaterial3d(materials.add(StandardMaterial {
+            unlit: true,
+            ..default()
+        })),
+        Transform::default(),
+        GlobalTransform::default(),
+    ));
 
-    commands.spawn_bundle(PerspectiveCameraBundle {
-        transform: Transform::from_translation(Vec3::new(30.0, 24.0, 30.0))
+    commands.spawn((
+        Camera3d::default(),
+        Msaa::Sample4,
+        Transform::from_translation(Vec3::new(30.0, 24.0, 30.0))
             .looking_at(Vec3::ONE * 8.0, Vec3::Y),
-        ..Default::default()
-    });
+        GlobalTransform::default(),
+    ));
 }

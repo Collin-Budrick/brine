@@ -5,7 +5,9 @@ use bevy::log;
 use byteorder::{BigEndian, ReadBytesExt, WriteBytesExt};
 
 /// A simple codec that sends and receives length-prefixed strings.
-#[derive(Debug, Default, Clone)]
+use bevy::prelude::Resource;
+
+#[derive(Debug, Default, Clone, Resource)]
 pub struct StringCodec;
 
 impl Encode for StringCodec {

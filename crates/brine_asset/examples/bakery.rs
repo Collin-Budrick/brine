@@ -23,12 +23,13 @@ fn main() {
     let mc_data = MinecraftData::for_version("1.21.4");
     let asset_pack = AssetPack::at_path(cargo_workspace_relative_path("../../assets/1.21.4"));
 
-    let baked_assets = bakery::bake_all(&mc_data, &asset_pack);
+    let _baked_assets = bakery::bake_all(&mc_data, &asset_pack);
 
     // println!("{:#?}", baked_assets);
 }
 
-fn print_a_few(mc_data: &MinecraftData, asset_pack: &AssetPack) {
+#[allow(dead_code)]
+fn print_a_few(_mc_data: &MinecraftData, asset_pack: &AssetPack) {
     info!("Loading textures");
     let texture_table = bakery::textures::load_texture_table(&asset_pack).unwrap();
 
@@ -44,7 +45,7 @@ fn print_a_few(mc_data: &MinecraftData, asset_pack: &AssetPack) {
     );
 
     info!("Loading unbaked block states");
-    let unbaked_block_states = bakery::block_states::load_unbaked_block_states(&asset_pack);
+    let _unbaked_block_states = bakery::block_states::load_unbaked_block_states(&asset_pack);
 
     let model_bakery = ModelBakery::new(&unbaked_models, &texture_table);
 
@@ -53,6 +54,7 @@ fn print_a_few(mc_data: &MinecraftData, asset_pack: &AssetPack) {
     print_baked_block(&model_bakery, "oak_stairs");
 }
 
+#[allow(dead_code)]
 fn print_baked_block(model_bakery: &ModelBakery, block_name: &str) {
     let baked = model_bakery.bake_model(block_name, false).unwrap();
 

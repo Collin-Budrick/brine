@@ -48,6 +48,10 @@ struct Args {
     /// Address of the server to connect to (host:port). Defaults to localhost:25565.
     #[clap(long, value_name = "HOST:PORT")]
     server: Option<String>,
+
+    /// Username to use when logging into the server. Defaults to "user".
+    #[clap(long, value_name = "USERNAME", default_value = USERNAME)]
+    username: String,
 }
 
 fn main() {
@@ -90,7 +94,7 @@ fn main() {
             .as_deref()
             .map(normalize_server_address)
             .unwrap_or_else(|| SERVER.to_string());
-        app.add_plugins(LoginPlugin::new(server, USERNAME.to_string()).exit_on_disconnect());
+        app.add_plugins(LoginPlugin::new(server, args.username.clone()).exit_on_disconnect());
     }
 
     let mc_data = MinecraftData::for_version("1.21.4");

@@ -1,8 +1,7 @@
-use bevy::prelude::*;
-use minecraft_assets::api::{ResourceIdentifier, ResourcePath};
-
+use bevy::{asset::AssetPath, prelude::*, DefaultPlugins};
 use brine_asset::TextureKey;
 use brine_render::texture::{TextureAtlas, TextureManager, TextureManagerPlugin};
+use minecraft_assets::api::{ResourceIdentifier, ResourcePath};
 
 fn get_a_few_textures(
     asset_server: &AssetServer,
@@ -16,8 +15,8 @@ fn get_a_few_textures(
     TEXTURES.iter().enumerate().map(|(index, name)| {
         let key = TextureKey(index);
         let loc = ResourceIdentifier::texture(name);
-        let path = ResourcePath::for_resource("1.21.4", &loc);
-        let handle = asset_server.load(path.as_ref());
+        let path = ResourcePath::for_resource("1.21.4", &loc).into_inner();
+        let handle = asset_server.load(AssetPath::from(path));
         (key, handle)
     })
 }
@@ -55,21 +54,25 @@ fn main() {
     App::new()
         .add_plugins(DefaultPlugins)
         .init_resource::<TheAtlas>()
-        .add_plugin(TextureManagerPlugin)
-        .add_state(AtlasState::Idle)
-        .add_system_set(SystemSet::on_update(AtlasState::Idle).with_system(setup))
-        .add_system_set(SystemSet::on_update(AtlasState::LoadingTextures).with_system(spawn_sprite))
+        .add_plugins(TextureManagerPlugin)
+        .insert_state(AtlasState::default())
+        .add_systems(Update, setup.run_if(in_state(AtlasState::Idle)))
+        .add_systems(
+            Update,
+            spawn_sprite.run_if(in_state(AtlasState::LoadingTextures)),
+        )
         .run();
 }
 
-#[derive(Debug, Copy, Clone, PartialEq, Eq, Hash)]
+#[derive(States, Default, Debug, Copy, Clone, PartialEq, Eq, Hash)]
 enum AtlasState {
+    #[default]
     Idle,
     LoadingTextures,
     Stitched,
 }
 
-#[derive(Default)]
+#[derive(Default, Resource)]
 struct TheAtlas {
     handle: Handle<TextureAtlas>,
 }
@@ -78,35 +81,36 @@ fn setup(
     asset_server: Res<AssetServer>,
     mut texture_manager: ResMut<TextureManager>,
     mut the_atlas: ResMut<TheAtlas>,
+    atlases: Res<Assets<TextureAtlas>>,
     mut commands: Commands,
-    mut state: ResMut<State<AtlasState>>,
+    mut next_state: ResMut<NextState<AtlasState>>,
 ) {
-    commands.spawn_bundle(OrthographicCameraBundle::new_2d());
+    commands.spawn((Camera2d, Msaa::Sample4, Transform::default(), GlobalTransform::default()));
 
     let texture_keys_and_handles = get_a_few_textures(&*asset_server);
 
-    let atlas_handle = texture_manager.create_atlas(&*asset_server, texture_keys_and_handles);
+    let atlas_handle = texture_manager.create_atlas(&*atlases, texture_keys_and_handles);
 
     the_atlas.handle = atlas_handle;
 
-    state.set(AtlasState::LoadingTextures).unwrap();
+    next_state.set(AtlasState::LoadingTextures);
 }
 
 fn spawn_sprite(
     atlases: Res<Assets<TextureAtlas>>,
     the_atlas: Res<TheAtlas>,
     mut commands: Commands,
-    mut state: ResMut<State<AtlasState>>,
+    mut next_state: ResMut<NextState<AtlasState>>,
 ) {
     if let Some(atlas) = atlases.get(&the_atlas.handle) {
         println!("Atlas stitched. Spawning sprite.");
 
-        commands.spawn().insert_bundle(SpriteBundle {
-            texture: atlas.texture.clone(),
-            // transform: Transform::from_scale(Vec3::ONE * 0.5),
-            ..Default::default()
-        });
+        commands.spawn((
+            Sprite::from_image(atlas.texture.clone()),
+            GlobalTransform::default(),
+            Transform::default(),
+        ));
 
-        state.set(AtlasState::Stitched).unwrap();
+        next_state.set(AtlasState::Stitched);
     }
 }

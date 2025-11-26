@@ -1,5 +1,4 @@
-#[allow(deprecated)] //fixme
-use core::mem::uninitialized;
+use core::mem::MaybeUninit;
 #[cfg(any(target_arch = "x86_64", target_arch = "aarch64"))]
 use core::ptr::{addr_of, read_unaligned};
 #[cfg(target_arch = "x86")]
@@ -2782,8 +2781,7 @@ pub type PKUSER_SHARED_DATA = *mut KUSER_SHARED_DATA;
 pub const USER_SHARED_DATA: *const KUSER_SHARED_DATA = 0x7ffe0000 as *const _;
 #[inline]
 pub unsafe fn NtGetTickCount64() -> ULONGLONG {
-    #[allow(deprecated)] //fixme
-    let mut tick_count: ULARGE_INTEGER = uninitialized();
+    let mut tick_count: ULARGE_INTEGER = MaybeUninit::zeroed().assume_init();
     #[cfg(any(target_arch = "x86_64", target_arch = "aarch64"))] {
         let tick_count_quad = read_unaligned(addr_of!((*USER_SHARED_DATA).u.TickCountQuad));
         *tick_count.QuadPart_mut() = tick_count_quad;
@@ -2814,8 +2812,7 @@ pub unsafe fn NtGetTickCount() -> ULONG {
         ((tick_count_quad * (*USER_SHARED_DATA).TickCountMultiplier as u64) >> 24) as u32
     }
     #[cfg(target_arch = "x86")] {
-        #[allow(deprecated)] //fixme
-        let mut tick_count: ULARGE_INTEGER = uninitialized();
+        let mut tick_count: ULARGE_INTEGER = MaybeUninit::zeroed().assume_init();
         loop {
             tick_count.s_mut().HighPart = read_volatile(&(*USER_SHARED_DATA).u.TickCount.High1Time)
                 as u32;

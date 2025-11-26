@@ -11,6 +11,7 @@ pub use mesh_viewer::MeshViewerPlugin;
 pub struct IntChunk([u32; CHUNK_VOXELS]);
 
 impl IntChunk {
+    #[allow(dead_code)]
     pub fn all(value: u32) -> Self {
         Self([value; CHUNK_VOXELS])
     }

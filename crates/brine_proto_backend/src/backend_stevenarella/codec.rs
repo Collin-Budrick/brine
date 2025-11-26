@@ -272,8 +272,12 @@ impl MinecraftCodec {
         let status: Value =
             serde_json::from_str(&status_response.response).map_err(|e| e.to_string())?;
 
-        let invalid_status =
-            || format!("Malformed StatusResponse json: {}", &status_response.response);
+        let invalid_status = || {
+            format!(
+                "Malformed StatusResponse json: {}",
+                &status_response.response
+            )
+        };
 
         let version = status.get("version").ok_or_else(invalid_status)?;
         let protocol_version = version

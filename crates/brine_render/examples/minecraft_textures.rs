@@ -1,5 +1,9 @@
-use bevy::{asset::AssetServerSettings, prelude::*};
-use bevy_inspector_egui::WorldInspectorPlugin;
+use bevy::{
+    asset::AssetPlugin,
+    prelude::{PluginGroup, *},
+    DefaultPlugins,
+};
+use bevy_inspector_egui::quick::WorldInspectorPlugin;
 
 use brine_asset::MinecraftAssets;
 use brine_data::MinecraftData;
@@ -15,23 +19,20 @@ fn main() {
     let mc_assets = MinecraftAssets::new("assets/1.21.4", &mc_data).unwrap();
 
     App::new()
-        .insert_resource(AssetServerSettings {
-            asset_folder: String::from("../../assets"),
-        })
-        .add_plugins(DefaultPlugins)
-        .add_plugin(WorldInspectorPlugin::new())
+        .add_plugins(DefaultPlugins.set(AssetPlugin {
+            file_path: "../../assets".into(),
+            ..default()
+        }))
+        .add_plugins(WorldInspectorPlugin::new())
         .insert_resource(mc_assets)
-        .add_plugin(TextureManagerPlugin)
-        .add_plugin(MinecraftTexturesPlugin)
-        .add_startup_system(setup)
-        .add_system_set(
-            SystemSet::on_enter(MinecraftTexturesState::Loaded).with_system(spawn_sprite),
-        )
+        .add_plugins((TextureManagerPlugin, MinecraftTexturesPlugin))
+        .add_systems(Startup, setup)
+        .add_systems(OnEnter(MinecraftTexturesState::Loaded), spawn_sprite)
         .run();
 }
 
 fn setup(mut commands: Commands) {
-    commands.spawn_bundle(OrthographicCameraBundle::new_2d());
+    commands.spawn((Camera2d, Msaa::Sample4, Transform::default(), GlobalTransform::default()));
 }
 
 fn spawn_sprite(
@@ -45,9 +46,9 @@ fn spawn_sprite(
 
     let atlas = atlases.get(atlas_handle).unwrap();
 
-    commands.spawn().insert_bundle(SpriteBundle {
-        texture: atlas.texture.clone(),
-        transform: Transform::from_scale(Vec3::ONE * 0.5),
-        ..Default::default()
-    });
+    commands.spawn((
+        Sprite::from_image(atlas.texture.clone()),
+        Transform::from_scale(Vec3::ONE * 0.5),
+        GlobalTransform::default(),
+    ));
 }

@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 
 use minecraft_data_rs::models::block::BoundingBox;
-pub use minecraft_data_rs::models::block::{Block as McBlock, State as McState};
+pub use minecraft_data_rs::models::block::Block as McBlock;
 
 use crate::Api;
 

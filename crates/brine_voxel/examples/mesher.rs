@@ -87,6 +87,6 @@ fn main() {
 
     App::new()
         .add_plugins(DefaultPlugins)
-        .add_plugin(MeshViewerPlugin::new(mesh))
+        .add_plugins(MeshViewerPlugin::new(mesh))
         .run();
 }

@@ -65,10 +65,10 @@ fn connect(mut net_resource: ResMut<NetworkResource<StringCodec>>) {
 }
 
 fn read_net_events(
-    mut event_reader: EventReader<NetworkEvent<StringCodec>>,
+    mut event_reader: MessageReader<NetworkEvent<StringCodec>>,
     mut codec_writer: CodecWriter<StringCodec>,
 ) {
-    for event in event_reader.iter() {
+    for event in event_reader.read() {
         println!("NetworkEvent: {:?}", &event);
 
         if let NetworkEvent::Connected = event {

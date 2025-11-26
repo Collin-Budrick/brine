@@ -5,3 +5,5 @@ cargo-timing*
 /assets/*/
 temp-mc-assets/
 debug.plist
+client-run.err
+client-run.log

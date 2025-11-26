@@ -62,6 +62,7 @@ impl ShowFaces {
         }
     }
 
+    #[allow(dead_code)]
     pub const fn only(face: BlockFace) -> Self {
         Self::none().with(face, true)
     }
