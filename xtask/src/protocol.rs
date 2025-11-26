@@ -2,6 +2,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::fmt::Write;
 use std::fs;
 use std::path::{Path, PathBuf};
+use std::sync::OnceLock;
 
 use anyhow::{anyhow, bail, Context, Result};
 use serde::Serialize;
@@ -49,6 +50,8 @@ pub struct PacketField {
     #[serde(rename = "type")]
     pub ty: Value,
 }
+
+static ALL_TYPES: OnceLock<serde_json::Map<String, Value>> = OnceLock::new();
 
 #[derive(Default)]
 struct HelperCollector {
@@ -106,7 +109,7 @@ struct RegistryHolderHelper {
     kind: RegistryHolderKind,
 }
 
-#[derive(Clone, Copy, PartialEq)]
+#[derive(Debug, Clone, Copy, PartialEq)]
 enum RegistryHolderKind {
     Single,
     Set,
@@ -127,15 +130,30 @@ impl HelperCollector {
             return "Vec<u8>".to_string();
         };
         let mut parsed = Vec::new();
-        for raw in fields {
-            let Some(name_raw) = raw.get("name").and_then(|v| v.as_str()) else {
-                continue;
-            };
+        for (idx, raw) in fields.iter().enumerate() {
             let Some(ty) = raw.get("type") else {
                 continue;
             };
+            let Some(name_raw) = raw
+                .get("name")
+                .and_then(|v| v.as_str())
+                .map(|s| s.to_string())
+                .or_else(|| {
+                    raw.get("anon")
+                        .and_then(|v| v.as_bool())
+                        .and_then(|is_anon| {
+                            if is_anon {
+                                Some(format!("anon_field_{idx}"))
+                            } else {
+                                None
+                            }
+                        })
+                })
+            else {
+                continue;
+            };
             parsed.push(ContainerFieldDef {
-                name: name_raw.to_string(),
+                name: name_raw,
                 ty: ty.clone(),
             });
         }
@@ -225,7 +243,13 @@ impl HelperCollector {
                     .and_then(|o| o.get("type"))
                     .unwrap_or(&Value::String("void".to_string()))
                     .clone();
-                let alt_type = map_type(&alt_type_value, self, owner, Some(&alt_field));
+                let mut alt_type = map_type(&alt_type_value, self, owner, Some(&alt_field));
+                if alt_type == "Vec<u8>" {
+                    if alt_type_value.is_array() {
+                        alt_type =
+                            self.register_container(&alt_type_value, &type_name(owner, field_name));
+                    }
+                }
                 (base_field, "VarInt".to_string(), alt_field, alt_type)
             }
             RegistryHolderKind::Set => {
@@ -252,7 +276,13 @@ impl HelperCollector {
                     .and_then(|o| o.get("type"))
                     .unwrap_or(&Value::String("void".to_string()))
                     .clone();
-                let alt_type = map_type(&alt_type_value, self, owner, Some(&alt_field));
+                let mut alt_type = map_type(&alt_type_value, self, owner, Some(&alt_field));
+                if alt_type == "Vec<u8>" {
+                    if alt_type_value.is_array() {
+                        alt_type =
+                            self.register_container(&alt_type_value, &type_name(owner, field_name));
+                    }
+                }
                 (base_field, base_type, alt_field, alt_type)
             }
         };
@@ -533,7 +563,7 @@ impl HelperCollector {
             writeln!(output, "            VarInt(v) => v as i64,")?;
             writeln!(output, "            VarLong(v) => v,")?;
             writeln!(output, "            value => value as i64,")?;
-            writeln!(output, "        };")?;
+            writeln!(output, "        }};")?;
             writeln!(output, "        match tag_value {{")?;
             for variant in &helper.variants {
                 if variant.ty == "()" {
@@ -582,7 +612,7 @@ impl HelperCollector {
                     )?;
                 }
             }
-            writeln!(output, "        }")?;
+            writeln!(output, "        }}")?;
             writeln!(output, "        Ok(())")?;
             writeln!(output, "    }}")?;
             writeln!(output, "}}")?;
@@ -603,6 +633,7 @@ pub fn build_packet_index(
         .with_context(|| format!("failed to read {}", proto_path.display()))?;
     let value: Value = serde_json::from_str(&contents)
         .with_context(|| format!("failed to parse {}", proto_path.display()))?;
+    set_all_types(&value);
     let global_types_value = value
         .get("types")
         .and_then(|v| v.as_object())
@@ -620,6 +651,32 @@ pub fn build_packet_index(
         protocol_version,
         states,
     })
+}
+
+fn set_all_types(proto: &Value) {
+    if ALL_TYPES.get().is_some() {
+        return;
+    }
+    let mut merged = serde_json::Map::new();
+    if let Some(global) = proto.get("types").and_then(|v| v.as_object()) {
+        merged.extend(global.clone());
+    }
+    for state in STATE_KEYS {
+        if let Some(state_value) = proto.get(*state) {
+            for dir in ["toServer", "toClient"] {
+                if let Some(types) = state_value
+                    .get(dir)
+                    .and_then(|v| v.get("types"))
+                    .and_then(|v| v.as_object())
+                {
+                    for (name, def) in types {
+                        merged.insert(name.clone(), def.clone());
+                    }
+                }
+            }
+        }
+    }
+    let _ = ALL_TYPES.set(merged);
 }
 
 pub fn write_version_table(index: &PacketIndex, out_dir: &Path) -> Result<PathBuf> {
@@ -674,29 +731,27 @@ pub fn write_state_packets_stub(index: &PacketIndex, out_dir: &Path) -> Result<P
     let file_path = out_dir.join("packet.rs");
     let mut output = String::new();
     let mut helpers = HelperCollector::default();
+    let mut state_body = String::new();
     writeln!(
-        &mut output,
+        &mut state_body,
         "// @generated by xtask::generate-protocol for Minecraft {}, protocol {}",
         index.minecraft_version, index.protocol_version
     )?;
     writeln!(
-        &mut output,
+        &mut state_body,
         "// Sketch of state_packets! for codegen; not meant to compile as-is."
     )?;
     writeln!(
-        &mut output,
+        &mut state_body,
         "// Contains helper newtypes so the packets can compile in isolation."
     )?;
-    writeln!(&mut output)?;
-    output.push_str(HELPERS_PRELUDE);
-    helpers.render(&mut output)?;
-    writeln!(&mut output)?;
-    writeln!(&mut output, "state_packets!(")?;
+    writeln!(&mut state_body)?;
+    writeln!(&mut state_body, "state_packets!(")?;
     for state in &index.states {
         let state_ident = state_rust_name(&state.state);
         let state_label = state_macro_label(&state.state);
         writeln!(
-            &mut output,
+            &mut state_body,
             "    {state_label} {state_ident} {{",
             state_label = state_label,
             state_ident = state_ident
@@ -704,20 +759,22 @@ pub fn write_state_packets_stub(index: &PacketIndex, out_dir: &Path) -> Result<P
         for direction in &state.directions {
             let dir_ident = direction_rust_name(direction.direction);
             writeln!(
-                &mut output,
+                &mut state_body,
                 "        {dir_label} {dir_ident} {{",
                 dir_label = direction_label(direction.direction),
                 dir_ident = dir_ident
             )?;
             for packet in &direction.packets {
-                writeln!(&mut output, "            packet {} {{", packet.rust_struct)?;
+                writeln!(
+                    &mut state_body,
+                    "            packet {} {{",
+                    packet.rust_struct
+                )?;
                 if packet.fields.is_empty() {
-                    writeln!(&mut output, "            }}")?;
+                    writeln!(&mut state_body, "            }}")?;
                     continue;
                 }
                 for field in &packet.fields {
-                    let type_hint =
-                        format!("{}{}", packet.rust_struct, to_pascal_case(&field.name));
                     let ty = map_type(
                         &field.ty,
                         &mut helpers,
@@ -725,18 +782,23 @@ pub fn write_state_packets_stub(index: &PacketIndex, out_dir: &Path) -> Result<P
                         Some(&field.name),
                     );
                     writeln!(
-                        &mut output,
+                        &mut state_body,
                         "                field {}: {} =,",
                         field.name, ty
                     )?;
                 }
-                writeln!(&mut output, "            }}")?;
+                writeln!(&mut state_body, "            }}")?;
             }
-            writeln!(&mut output, "        }}")?;
+            writeln!(&mut state_body, "        }}")?;
         }
-        writeln!(&mut output, "    }}")?;
+        writeln!(&mut state_body, "    }}")?;
     }
-    writeln!(&mut output, ");")?;
+    writeln!(&mut state_body, ");")?;
+
+    output.push_str(HELPERS_PRELUDE);
+    helpers.render(&mut output)?;
+    writeln!(&mut output)?;
+    output.push_str(&state_body);
     fs::write(&file_path, output)?;
     Ok(file_path)
 }
@@ -1059,6 +1121,11 @@ fn map_type(
         if let Some(mapped) = map_simple_type(name) {
             return mapped.to_string();
         }
+        if let Some(all) = ALL_TYPES.get() {
+            if let Some(def) = all.get(name) {
+                return map_type(def, helpers, owner, field_name);
+            }
+        }
         // Unknown named types default to raw bytes for now.
         return String::from("Vec<u8>");
     }
@@ -1066,7 +1133,9 @@ fn map_type(
         if let Some(kind) = array.get(0).and_then(|v| v.as_str()) {
             match kind {
                 "array" => {
-                    let count_ty = array.get(1).and_then(|v| v.get("countType"));
+                    let count_ty = array
+                        .get(1)
+                        .and_then(|v| v.get("countType").or_else(|| v.get("count")));
                     let inner = array.get(1).and_then(|v| v.get("type"));
                     let count_rust = count_ty
                         .and_then(|v| v.as_str())
@@ -1095,8 +1164,25 @@ fn map_type(
                 "container" => {
                     return helpers.register_container(value, &type_name(owner, field_name));
                 }
+                "bitfield" => {
+                    return "Position".to_string();
+                }
+                "bitflags" => {
+                    let base = array
+                        .get(1)
+                        .and_then(|v| v.get("type"))
+                        .map(|v| map_type(v, helpers, owner, field_name))
+                        .unwrap_or_else(|| "i32".to_string());
+                    return base;
+                }
+                "pstring" => {
+                    return "String".to_string();
+                }
                 "entityMetadataLoop" => {
                     return "steven_protocol::types::Metadata".to_string();
+                }
+                "topBitSetTerminatedArray" => {
+                    return "packet::EntityEquipments".to_string();
                 }
                 "mapper" => {
                     if let Ok(TypeExpr::Mapper(spec)) = TypeExpr::parse(value) {
@@ -1105,7 +1191,21 @@ fn map_type(
                 }
                 "switch" => {
                     if let Ok(TypeExpr::Switch(spec)) = TypeExpr::parse(value) {
-                        return helpers.register_switch(value, owner, field_name, &spec);
+                        let mapped = helpers.register_switch(value, owner, field_name, &spec);
+                        if mapped != "Vec<u8>" {
+                            return mapped;
+                        }
+                        if let Some(fallback) = value
+                            .get(1)
+                            .and_then(|v| v.get("fields"))
+                            .and_then(|v| v.as_object())
+                            .and_then(|fields| fields.values().next())
+                        {
+                            return map_type(fallback, helpers, owner, field_name);
+                        }
+                        if let Some(default) = value.get(1).and_then(|v| v.get("default")) {
+                            return map_type(default, helpers, owner, field_name);
+                        }
                     }
                 }
                 "registryEntryHolder" => {
@@ -1148,8 +1248,11 @@ fn map_simple_type(name: &str) -> Option<&'static str> {
         "f64" => Some("f64"),
         "UUID" => Some("UUID"),
         "string" => Some("String"),
+        "pstring" => Some("String"),
         "void" => Some("()"),
-        "buffer" | "ByteArray" | "restBuffer" => Some("Vec<u8>"),
+        "Slot" => Some("Option<item::Stack>"),
+        "buffer" | "ByteArray" => Some("PrefixedBytes<VarInt>"),
+        "restBuffer" => Some("Vec<u8>"),
         "anonymousNbt" | "anonOptionalNbt" => Some("nbt::NamedTag"),
         _ => None,
     }
@@ -1342,6 +1445,70 @@ fn resolve_type_reference<'a>(
     }
 }
 
+fn resolve_named_type(
+    name: &str,
+    local_types: &serde_json::Map<String, Value>,
+    global_types: &serde_json::Map<String, Value>,
+) -> Value {
+    let mut current = name.to_string();
+    let mut visited = BTreeSet::new();
+    loop {
+        if !visited.insert(current.clone()) {
+            break;
+        }
+        if let Some(value) = local_types.get(&current) {
+            match value {
+                Value::String(next) => {
+                    if next == "native" {
+                        return Value::String(current);
+                    }
+                    current = next.clone();
+                    continue;
+                }
+                other => return other.clone(),
+            }
+        }
+        if let Some(value) = global_types.get(&current) {
+            match value {
+                Value::String(next) => {
+                    if next == "native" {
+                        return Value::String(current);
+                    }
+                    current = next.clone();
+                    continue;
+                }
+                other => return other.clone(),
+            }
+        }
+        break;
+    }
+    Value::String(current)
+}
+
+fn resolve_type_value(
+    value: &Value,
+    local_types: &serde_json::Map<String, Value>,
+    global_types: &serde_json::Map<String, Value>,
+) -> Value {
+    match value {
+        Value::String(name) => resolve_named_type(name, local_types, global_types),
+        Value::Array(items) => Value::Array(
+            items
+                .iter()
+                .map(|v| resolve_type_value(v, local_types, global_types))
+                .collect(),
+        ),
+        Value::Object(map) => {
+            let mut out = serde_json::Map::new();
+            for (k, v) in map {
+                out.insert(k.clone(), resolve_type_value(v, local_types, global_types));
+            }
+            Value::Object(out)
+        }
+        _ => value.clone(),
+    }
+}
+
 fn parse_container_fields(
     type_value: &Value,
     local_types: &serde_json::Map<String, Value>,
@@ -1361,21 +1528,15 @@ fn parse_container_fields(
     };
     let mut fields = Vec::with_capacity(fields_value.len());
     for entry in fields_value {
-        let Some(name) = entry.get("name").and_then(|v| v.as_str()) else {
+        let Some(name_raw) = entry.get("name").and_then(|v| v.as_str()) else {
             bail!("container field missing name");
         };
-        let Some(ty) = entry.get("type") else {
-            bail!("container field {name} missing type");
+        let Some(ty_raw) = entry.get("type") else {
+            bail!("container field {name_raw} missing type");
         };
-        let ty = if let Some(type_name) = ty.as_str() {
-            resolve_type_reference(local_types, global_types, type_name)
-                .unwrap_or(ty)
-                .clone()
-        } else {
-            ty.clone()
-        };
+        let ty = resolve_type_value(ty_raw, local_types, global_types);
         fields.push(PacketField {
-            name: name.to_string(),
+            name: name_raw.to_string(),
             ty,
         });
     }
