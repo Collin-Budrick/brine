@@ -53,6 +53,8 @@ pub struct PacketField {
 #[derive(Default)]
 struct HelperCollector {
     containers: BTreeMap<String, ContainerHelper>,
+    enums: BTreeMap<String, EnumHelper>,
+    mappers: BTreeMap<String, MapperHelper>,
 }
 
 #[derive(Clone)]
@@ -65,6 +67,32 @@ struct ContainerHelper {
 struct ContainerFieldDef {
     name: String,
     ty: Value,
+}
+
+#[derive(Clone)]
+struct EnumHelper {
+    name: String,
+    tag_type: String,
+    variants: Vec<EnumVariant>,
+}
+
+#[derive(Clone)]
+struct EnumVariant {
+    tag: i32,
+    name: String,
+    ty: String,
+}
+
+#[derive(Clone)]
+struct MapperHelper {
+    tag_type: String,
+    mappings: Vec<MapperEntry>,
+}
+
+#[derive(Clone)]
+struct MapperEntry {
+    tag: i32,
+    name: String,
 }
 
 impl HelperCollector {
@@ -104,6 +132,94 @@ impl HelperCollector {
         name
     }
 
+    fn mapper_key(owner: &str, field: &str) -> String {
+        format!("{owner}::{field}")
+    }
+
+    fn register_mapper(
+        &mut self,
+        owner: &str,
+        field_name: Option<&str>,
+        spec: &MapperSpec,
+    ) -> String {
+        let tag_type = map_mapper_tag_type(spec);
+        if let Some(field) = field_name {
+            let key = Self::mapper_key(owner, field);
+            self.mappers.entry(key).or_insert_with(|| MapperHelper {
+                tag_type: tag_type.clone(),
+                mappings: spec
+                    .mappings
+                    .iter()
+                    .map(|(tag, name)| MapperEntry {
+                        tag: *tag,
+                        name: name.clone(),
+                    })
+                    .collect(),
+            });
+        }
+        let name = type_name(owner, field_name);
+        let variants = spec
+            .mappings
+            .iter()
+            .map(|(tag, name)| EnumVariant {
+                tag: *tag,
+                name: to_pascal_case(name),
+                ty: "()".to_string(),
+            })
+            .collect();
+        self.enums.entry(name.clone()).or_insert(EnumHelper {
+            name: name.clone(),
+            tag_type,
+            variants,
+        });
+        name
+    }
+
+    fn register_switch(
+        &mut self,
+        value: &Value,
+        owner: &str,
+        field_name: Option<&str>,
+        spec: &SwitchSpec,
+    ) -> String {
+        let Some(field_name) = field_name else {
+            return "Vec<u8>".to_string();
+        };
+        let key = Self::mapper_key(owner, &spec.compare_to);
+        let Some(mapper) = self.mappers.get(&key).cloned() else {
+            return "Vec<u8>".to_string();
+        };
+        let enum_name = type_name(owner, Some(field_name));
+        let Some(fields) = value
+            .get(1)
+            .and_then(|v| v.get("fields"))
+            .and_then(|v| v.as_object())
+        else {
+            return "Vec<u8>".to_string();
+        };
+        let mut variants = Vec::new();
+        for mapping in &mapper.mappings {
+            let Some(target_value) = fields.get(&mapping.name) else {
+                continue;
+            };
+            let variant_ty = map_type(target_value, self, owner, Some(&mapping.name));
+            variants.push(EnumVariant {
+                tag: mapping.tag,
+                name: to_pascal_case(&mapping.name),
+                ty: variant_ty,
+            });
+        }
+        self.enums.insert(
+            enum_name.clone(),
+            EnumHelper {
+                name: enum_name.clone(),
+                tag_type: mapper.tag_type,
+                variants,
+            },
+        );
+        enum_name
+    }
+
     fn render(&mut self, output: &mut String) -> Result<()> {
         let keys: Vec<String> = self.containers.keys().cloned().collect();
         for key in keys {
@@ -113,7 +229,7 @@ impl HelperCollector {
             writeln!(output, "#[derive(Default, Debug, Clone, PartialEq)]")?;
             writeln!(output, "pub struct {} {{", helper.name)?;
             for field in &helper.fields {
-                let ty = map_type(&field.ty, self, &helper.name);
+                let ty = map_type(&field.ty, self, &helper.name, Some(&field.name));
                 writeln!(output, "    pub {}: {},", field.name, ty)?;
             }
             writeln!(output, "}}")?;
@@ -129,7 +245,7 @@ impl HelperCollector {
                     output,
                     "            {}: {}::read_from(buf)?,",
                     field.name,
-                    map_type(&field.ty, self, &helper.name)
+                    map_type(&field.ty, self, &helper.name, Some(&field.name))
                 )?;
             }
             writeln!(output, "        }})")?;
@@ -141,6 +257,92 @@ impl HelperCollector {
             for field in &helper.fields {
                 writeln!(output, "        self.{}.write_to(buf)?;", field.name)?;
             }
+            writeln!(output, "        Ok(())")?;
+            writeln!(output, "    }}")?;
+            writeln!(output, "}}")?;
+            writeln!(output)?;
+        }
+        let enum_keys: Vec<String> = self.enums.keys().cloned().collect();
+        for key in enum_keys {
+            let Some(helper) = self.enums.get(&key).cloned() else {
+                continue;
+            };
+            writeln!(output, "#[derive(Debug, Clone, PartialEq)]")?;
+            writeln!(output, "pub enum {} {{", helper.name)?;
+            for variant in &helper.variants {
+                if variant.ty == "()" {
+                    writeln!(output, "    {},", variant.name)?;
+                } else {
+                    writeln!(output, "    {}({}),", variant.name, variant.ty)?;
+                }
+            }
+            writeln!(output, "}}")?;
+            writeln!(output)?;
+
+            writeln!(output, "impl Serializable for {} {{", helper.name)?;
+            writeln!(
+                output,
+                "    fn read_from<R: io::Read>(buf: &mut R) -> Result<Self, Error> {{"
+            )?;
+            writeln!(
+                output,
+                "        let tag = {}::read_from(buf)?;",
+                helper.tag_type
+            )?;
+            writeln!(output, "        let tag_value: i64 = match tag {{")?;
+            writeln!(output, "            VarInt(v) => v as i64,")?;
+            writeln!(output, "            VarLong(v) => v,")?;
+            writeln!(output, "            value => value as i64,")?;
+            writeln!(output, "        };")?;
+            writeln!(output, "        match tag_value {{")?;
+            for variant in &helper.variants {
+                if variant.ty == "()" {
+                    writeln!(
+                        output,
+                        "            {tag} => Ok(Self::{name}),",
+                        tag = variant.tag,
+                        name = variant.name
+                    )?;
+                } else {
+                    writeln!(
+                        output,
+                        "            {tag} => Ok(Self::{name}({ty}::read_from(buf)?)),",
+                        tag = variant.tag,
+                        name = variant.name,
+                        ty = variant.ty
+                    )?;
+                }
+            }
+            writeln!(
+                output,
+                "            other => Err(io::Error::new(io::ErrorKind::InvalidData, format!(\"unknown {name} tag {{{{}}}}\", other)).into()),",
+                name = helper.name
+            )?;
+            writeln!(output, "        }}")?;
+            writeln!(output, "    }}")?;
+            writeln!(
+                output,
+                "    fn write_to<W: io::Write>(&self, buf: &mut W) -> Result<(), Error> {{"
+            )?;
+            writeln!(output, "        match self {{")?;
+            for variant in &helper.variants {
+                if variant.ty == "()" {
+                    writeln!(
+                        output,
+                        "            Self::{name} => {{ {tag}.write_to(buf)?; }},",
+                        name = variant.name,
+                        tag = render_tag_value(&helper.tag_type, variant.tag)
+                    )?;
+                } else {
+                    writeln!(
+                        output,
+                        "            Self::{name}(value) => {{ {tag}.write_to(buf)?; value.write_to(buf)?; }},",
+                        name = variant.name,
+                        tag = render_tag_value(&helper.tag_type, variant.tag)
+                    )?;
+                }
+            }
+            writeln!(output, "        }")?;
             writeln!(output, "        Ok(())")?;
             writeln!(output, "    }}")?;
             writeln!(output, "}}")?;
@@ -276,7 +478,12 @@ pub fn write_state_packets_stub(index: &PacketIndex, out_dir: &Path) -> Result<P
                 for field in &packet.fields {
                     let type_hint =
                         format!("{}{}", packet.rust_struct, to_pascal_case(&field.name));
-                    let ty = map_type(&field.ty, &mut helpers, &type_hint);
+                    let ty = map_type(
+                        &field.ty,
+                        &mut helpers,
+                        &packet.rust_struct,
+                        Some(&field.name),
+                    );
                     writeln!(
                         &mut output,
                         "                field {}: {} =,",
@@ -411,6 +618,7 @@ struct ContainerField {
 
 #[derive(Debug)]
 struct MapperSpec {
+    tag_type: Option<String>,
     mappings: Vec<(i32, String)>,
 }
 
@@ -486,6 +694,10 @@ fn parse_mapper(value: Option<&Value>) -> Result<TypeExpr> {
     let Some(obj) = value.and_then(|v| v.as_object()) else {
         bail!("mapper definition missing object body");
     };
+    let tag_type = obj
+        .get("type")
+        .and_then(|v| v.as_str())
+        .map(|s| s.to_string());
     let Some(mappings_value) = obj.get("mappings").and_then(|v| v.as_object()) else {
         bail!("mapper definition missing mappings");
     };
@@ -498,7 +710,10 @@ fn parse_mapper(value: Option<&Value>) -> Result<TypeExpr> {
         entries.push((id, name.to_string()));
     }
     entries.sort_by_key(|(id, _)| *id);
-    Ok(TypeExpr::Mapper(MapperSpec { mappings: entries }))
+    Ok(TypeExpr::Mapper(MapperSpec {
+        tag_type,
+        mappings: entries,
+    }))
 }
 
 fn parse_switch(value: Option<&Value>) -> Result<TypeExpr> {
@@ -594,7 +809,12 @@ fn version_module_name(version: &str) -> String {
     out
 }
 
-fn map_type(value: &Value, helpers: &mut HelperCollector, hint: &str) -> String {
+fn map_type(
+    value: &Value,
+    helpers: &mut HelperCollector,
+    owner: &str,
+    field_name: Option<&str>,
+) -> String {
     if let Some(name) = value.as_str() {
         if let Some(mapped) = map_simple_type(name) {
             return mapped.to_string();
@@ -613,14 +833,14 @@ fn map_type(value: &Value, helpers: &mut HelperCollector, hint: &str) -> String 
                         .map(map_count_type)
                         .unwrap_or_else(|| "VarInt".to_string());
                     let inner_rust = inner
-                        .map(|v| map_type(v, helpers, hint))
+                        .map(|v| map_type(v, helpers, owner, field_name))
                         .unwrap_or_else(|| "Vec<u8>".to_string());
                     return format!("CountedArray<{inner_rust}, {count_rust}>");
                 }
                 "option" => {
                     let inner = array
                         .get(1)
-                        .map(|v| map_type(v, helpers, hint))
+                        .map(|v| map_type(v, helpers, owner, field_name))
                         .unwrap_or_else(|| "Vec<u8>".to_string());
                     return format!("OptionFlag<{inner}>");
                 }
@@ -633,10 +853,17 @@ fn map_type(value: &Value, helpers: &mut HelperCollector, hint: &str) -> String 
                     return format!("PrefixedBytes<{count_rust}>");
                 }
                 "container" => {
-                    return helpers.register_container(value, hint);
+                    return helpers.register_container(value, &type_name(owner, field_name));
                 }
-                "switch" | "mapper" => {
-                    return "Vec<u8>".to_string();
+                "mapper" => {
+                    if let Ok(TypeExpr::Mapper(spec)) = TypeExpr::parse(value) {
+                        return helpers.register_mapper(owner, field_name, &spec);
+                    }
+                }
+                "switch" => {
+                    if let Ok(TypeExpr::Switch(spec)) = TypeExpr::parse(value) {
+                        return helpers.register_switch(value, owner, field_name, &spec);
+                    }
                 }
                 _ => {}
             }
@@ -662,6 +889,7 @@ fn map_simple_type(name: &str) -> Option<&'static str> {
         "f64" => Some("f64"),
         "UUID" => Some("UUID"),
         "string" => Some("String"),
+        "void" => Some("()"),
         "buffer" | "ByteArray" | "restBuffer" => Some("Vec<u8>"),
         "anonymousNbt" | "anonOptionalNbt" => Some("nbt::NamedTag"),
         _ => None,
@@ -676,6 +904,38 @@ fn map_count_type(name: &str) -> String {
         "u16" => "u16".to_string(),
         "u32" => "u32".to_string(),
         other => other.to_string(),
+    }
+}
+
+fn type_name(owner: &str, field_name: Option<&str>) -> String {
+    let mut name = to_pascal_case(owner);
+    if let Some(field) = field_name {
+        name.push_str(&to_pascal_case(field));
+    }
+    name
+}
+
+fn map_mapper_tag_type(spec: &MapperSpec) -> String {
+    spec.tag_type
+        .as_deref()
+        .and_then(map_simple_type)
+        .unwrap_or("VarInt")
+        .to_string()
+}
+
+fn render_tag_value(tag_type: &str, tag: i32) -> String {
+    match tag_type {
+        "VarInt" => format!("VarInt({tag})"),
+        "VarLong" => format!("VarLong({tag} as i64)"),
+        "u8" => format!("{tag}u8"),
+        "u16" => format!("{tag}u16"),
+        "u32" => format!("{tag}u32"),
+        "u64" => format!("{tag}u64"),
+        "i8" => format!("{tag}i8"),
+        "i16" => format!("{tag}i16"),
+        "i32" => format!("{tag}i32"),
+        "i64" => format!("{tag}i64"),
+        _ => tag.to_string(),
     }
 }
 
