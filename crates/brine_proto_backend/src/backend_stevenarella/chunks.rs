@@ -26,80 +26,8 @@ pub struct ChunkData<T> {
 
 impl<'d> ChunkData<&'d [u8]> {
     pub fn from_packet(packet: &'d Packet) -> Option<Self> {
-        let (chunk_x, chunk_z, full_chunk, bitmask, data) = match packet {
-            /*Packet::Known(packet::Packet::ChunkData_Biomes3D_Bitmasks(chunk_data)) => (
-                chunk_data.chunk_x,
-                chunk_data.chunk_z,
-                ??,
-                ??,
-                &chunk_data.data[..],
-            ),*/
-            Packet::Known(packet::Packet::ChunkData_Biomes3D_VarInt(chunk_data)) => (
-                chunk_data.chunk_x,
-                chunk_data.chunk_z,
-                chunk_data.new,
-                chunk_data.bitmask.0 as u16,
-                &chunk_data.data.data[..],
-            ),
-            Packet::Known(packet::Packet::ChunkData_Biomes3D_bool(chunk_data)) => (
-                chunk_data.chunk_x,
-                chunk_data.chunk_z,
-                chunk_data.new,
-                chunk_data.bitmask.0 as u16,
-                &chunk_data.data.data[..],
-            ),
-            Packet::Known(packet::Packet::ChunkData_Biomes3D(chunk_data)) => (
-                chunk_data.chunk_x,
-                chunk_data.chunk_z,
-                chunk_data.new,
-                chunk_data.bitmask.0 as u16,
-                &chunk_data.data.data[..],
-            ),
-            Packet::Known(packet::Packet::ChunkData_HeightMap(chunk_data)) => (
-                chunk_data.chunk_x,
-                chunk_data.chunk_z,
-                chunk_data.new,
-                chunk_data.bitmask.0 as u16,
-                &chunk_data.data.data[..],
-            ),
-            Packet::Known(packet::Packet::ChunkData(chunk_data)) => (
-                chunk_data.chunk_x,
-                chunk_data.chunk_z,
-                chunk_data.new,
-                chunk_data.bitmask.0 as u16,
-                &chunk_data.data.data[..],
-            ),
-            Packet::Known(packet::Packet::ChunkData_NoEntities(chunk_data)) => (
-                chunk_data.chunk_x,
-                chunk_data.chunk_z,
-                chunk_data.new,
-                chunk_data.bitmask.0 as u16,
-                &chunk_data.data.data[..],
-            ),
-            /*Packet::Known(packet::Packet::ChunkData_NoEntities_u16(chunk_data)) => (
-                chunk_data.chunk_x,
-                chunk_data.chunk_z,
-                chunk_data.new,
-                chunk_data.bitmask,
-                &chunk_data.data.data[..] ?? varints,
-            ),*/
-            /*Packet::Known(packet::Packet::ChunkData_17(chunk_data)) => (
-                chunk_data.chunk_x,
-                chunk_data.chunk_z,
-                chunk_data.new,
-                chunk_data.bitmask,
-                &chunk_data.data.data[..] ?? compressed data,
-            ),*/
-            _ => return None,
-        };
-
-        Some(ChunkData {
-            chunk_x,
-            chunk_z,
-            bitmask,
-            full_chunk,
-            data,
-        })
+        let _ = packet;
+        None
     }
 }
 

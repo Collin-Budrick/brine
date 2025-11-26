@@ -81,14 +81,16 @@ pub(crate) fn build(app: &mut App) {
 }
 
 fn make_handshake_packet(protocol_version: i32, next_state: i32) -> Packet {
-    Packet::Known(packet::Packet::Handshake(Box::new(
-        packet::handshake::serverbound::Handshake {
-            protocol_version: VarInt(protocol_version),
-            // Next state to go to (1 for status, 2 for login)
-            next: VarInt(next_state),
-            ..Default::default()
-        },
-    )))
+    Packet::Known(
+        packet::Packet::HandshakingServerboundSetProtocol(Box::new(
+            packet::handshake::serverbound::SetProtocol {
+                protocolVersion: VarInt(protocol_version),
+                // Next state to go to (1 for status, 2 for login)
+                nextState: VarInt(next_state),
+                ..Default::default()
+            },
+        )),
+    )
 }
 
 /// System that listens for any connection failure event and emits a LoginFailure event.
@@ -177,9 +179,10 @@ mod protocol_discovery {
                 trace!("{:#?}", &handshake);
                 packet_writer.send(handshake);
 
-                let status_request = Packet::Known(packet::Packet::StatusRequest(Box::new(
-                    packet::status::serverbound::StatusRequest::default(),
-                )));
+                let status_request =
+                    Packet::Known(packet::Packet::StatusServerboundPingStart(Box::new(
+                        packet::status::serverbound::PingStart::default(),
+                    )));
                 packet_writer.send(status_request);
 
                 login_state.set(LoginState::StatusAwaitingResponse);
@@ -195,7 +198,7 @@ mod protocol_discovery {
         net_resource: Res<NetworkResource<ProtocolCodec>>,
     ) {
         for packet in packet_reader.iter() {
-            if let Packet::Known(packet::Packet::StatusResponse(_)) = packet {
+            if let Packet::Known(packet::Packet::StatusClientboundServerInfo(_)) = packet {
                 // The codec will have already switched its internal protocol
                 // version in response to decoding the StatusResponse packet,
                 // so just read it from there.
@@ -207,8 +210,8 @@ mod protocol_discovery {
                 );
 
                 debug!("Sending StatusPing.");
-                let status_ping = Packet::Known(packet::Packet::StatusPing(Box::new(
-                    packet::status::serverbound::StatusPing::default(),
+                let status_ping = Packet::Known(packet::Packet::StatusServerboundPing(Box::new(
+                    packet::status::serverbound::Ping { time: 0 },
                 )));
                 packet_writer.send(status_ping);
 
@@ -255,11 +258,14 @@ mod login {
         );
     }
 
-    fn make_login_start_packet(_protocol_version: i32, username: String) -> Packet {
-        Packet::Known(packet::Packet::LoginStart(Box::new(
-            packet::login::serverbound::LoginStart { username },
-        )))
-    }
+fn make_login_start_packet(_protocol_version: i32, username: String) -> Packet {
+    Packet::Known(packet::Packet::LoginServerboundLoginStart(Box::new(
+        packet::login::serverbound::LoginStart {
+            username,
+            ..Default::default()
+        },
+    )))
+}
 
     /// System that listens for a successful connection event and then sends the
     /// first two packets of the login exchange.
@@ -309,15 +315,7 @@ mod login {
 
         for packet in packet_reader.iter() {
             match packet {
-                Packet::Known(packet::Packet::LoginSuccess_String(login_success)) => {
-                    on_login_success(
-                        login_success.username.clone(),
-                        Uuid::from_str(&login_success.uuid).unwrap(),
-                    );
-                    break;
-                }
-                Packet::Known(packet::Packet::LoginSuccess_UUID(login_success)) => {
-                    // Grr, Steven, y u no make fields public!
+                Packet::Known(packet::Packet::LoginClientboundSuccess(login_success)) => {
                     let mut uuid_bytes = Vec::with_capacity(16);
                     login_success.uuid.write_to(&mut uuid_bytes).unwrap();
                     let uuid = Uuid::from_bytes(uuid_bytes.try_into().unwrap());
@@ -326,7 +324,7 @@ mod login {
                     break;
                 }
 
-                Packet::Known(packet::Packet::LoginDisconnect(login_disconnect)) => {
+                Packet::Known(packet::Packet::LoginClientboundDisconnect(login_disconnect)) => {
                     let message = format!("Login disconnect: {}", login_disconnect.reason);
                     error!("{}", &message);
 
@@ -358,21 +356,18 @@ mod play {
     ) {
         for packet in packet_reader.iter() {
             let response = match packet {
-                Packet::Known(packet::Packet::KeepAliveClientbound_VarInt(keep_alive)) => {
-                    Packet::Known(packet::Packet::KeepAliveServerbound_VarInt(Box::new(
-                        packet::play::serverbound::KeepAliveServerbound_VarInt {
-                            id: keep_alive.id,
+                Packet::Known(packet::Packet::ConfigurationClientboundKeepAlive(keep_alive)) => {
+                    Packet::Known(packet::Packet::ConfigurationServerboundKeepAlive(Box::new(
+                        packet::configuration::serverbound::KeepAlive {
+                            keepAliveId: keep_alive.keepAliveId,
                         },
                     )))
                 }
-                Packet::Known(packet::Packet::KeepAliveClientbound_i32(keep_alive)) => {
-                    Packet::Known(packet::Packet::KeepAliveServerbound_i32(Box::new(
-                        packet::play::serverbound::KeepAliveServerbound_i32 { id: keep_alive.id },
-                    )))
-                }
-                Packet::Known(packet::Packet::KeepAliveClientbound_i64(keep_alive)) => {
-                    Packet::Known(packet::Packet::KeepAliveServerbound_i64(Box::new(
-                        packet::play::serverbound::KeepAliveServerbound_i64 { id: keep_alive.id },
+                Packet::Known(packet::Packet::PlayClientboundKeepAlive(keep_alive)) => {
+                    Packet::Known(packet::Packet::PlayServerboundKeepAlive(Box::new(
+                        packet::play::serverbound::KeepAlive {
+                            keepAliveId: keep_alive.keepAliveId,
+                        },
                     )))
                 }
 
@@ -390,9 +385,16 @@ mod play {
         mut disconnect_events: MessageWriter<Disconnect>,
     ) {
         for packet in packet_reader.iter() {
-            if let Packet::Known(packet::Packet::Disconnect(disconnect)) = packet {
-                let reason = disconnect.reason.to_string();
-                disconnect_events.write(Disconnect { reason });
+            match packet {
+                Packet::Known(packet::Packet::PlayClientboundKickDisconnect(disconnect)) => {
+                    let reason = format!("{:?}", disconnect.reason);
+                    disconnect_events.write(Disconnect { reason });
+                }
+                Packet::Known(packet::Packet::ConfigurationClientboundDisconnect(disconnect)) => {
+                    let reason = format!("{:?}", disconnect.reason);
+                    disconnect_events.write(Disconnect { reason });
+                }
+                _ => {}
             }
         }
     }

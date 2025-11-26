@@ -33,6 +33,7 @@ pub enum MinecraftProtocolState {
     Handshaking,
     Status,
     Login,
+    Configuration,
     Play,
 }
 
@@ -98,13 +99,15 @@ impl CodecState {
     const HANDSHAKING: u8 = 0;
     const STATUS: u8 = 1;
     const LOGIN: u8 = 2;
-    const PLAY: u8 = 3;
+    const CONFIGURATION: u8 = 3;
+    const PLAY: u8 = 4;
 
     pub fn protocol_state(&self) -> MinecraftProtocolState {
         match self.protocol_state.load(Ordering::Relaxed) {
             Self::HANDSHAKING => MinecraftProtocolState::Handshaking,
             Self::STATUS => MinecraftProtocolState::Status,
             Self::LOGIN => MinecraftProtocolState::Login,
+            Self::CONFIGURATION => MinecraftProtocolState::Configuration,
             Self::PLAY => MinecraftProtocolState::Play,
             _ => unreachable!(),
         }
@@ -115,6 +118,7 @@ impl CodecState {
             MinecraftProtocolState::Handshaking => Self::HANDSHAKING,
             MinecraftProtocolState::Status => Self::STATUS,
             MinecraftProtocolState::Login => Self::LOGIN,
+            MinecraftProtocolState::Configuration => Self::CONFIGURATION,
             MinecraftProtocolState::Play => Self::PLAY,
         };
         self.protocol_state.store(as_int, Ordering::Relaxed);
