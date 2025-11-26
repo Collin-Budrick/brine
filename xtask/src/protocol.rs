@@ -55,6 +55,7 @@ struct HelperCollector {
     containers: BTreeMap<String, ContainerHelper>,
     enums: BTreeMap<String, EnumHelper>,
     mappers: BTreeMap<String, MapperHelper>,
+    registry_holders: BTreeMap<String, RegistryHolderHelper>,
 }
 
 #[derive(Clone)]
@@ -93,6 +94,22 @@ struct MapperHelper {
 struct MapperEntry {
     tag: i32,
     name: String,
+}
+
+#[derive(Clone)]
+struct RegistryHolderHelper {
+    name: String,
+    base_field: String,
+    base_type: String,
+    alt_field: String,
+    alt_type: String,
+    kind: RegistryHolderKind,
+}
+
+#[derive(Clone, Copy, PartialEq)]
+enum RegistryHolderKind {
+    Single,
+    Set,
 }
 
 impl HelperCollector {
@@ -172,6 +189,86 @@ impl HelperCollector {
             tag_type,
             variants,
         });
+        name
+    }
+
+    fn register_registry_holder(
+        &mut self,
+        value: &Value,
+        owner: &str,
+        field_name: Option<&str>,
+        kind: RegistryHolderKind,
+    ) -> String {
+        let key = value.to_string();
+        if let Some(existing) = self.registry_holders.get(&key) {
+            return existing.name.clone();
+        }
+
+        let Some(opts) = value.get(1).and_then(|v| v.as_object()) else {
+            return "Vec<u8>".to_string();
+        };
+
+        let (base_field, base_type, alt_field, alt_type) = match kind {
+            RegistryHolderKind::Single => {
+                let base_field = opts
+                    .get("baseName")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("value")
+                    .to_string();
+                let alt_opts = opts.get("otherwise").and_then(|v| v.as_object());
+                let alt_field = alt_opts
+                    .and_then(|o| o.get("name"))
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("data")
+                    .to_string();
+                let alt_type_value = alt_opts
+                    .and_then(|o| o.get("type"))
+                    .unwrap_or(&Value::String("void".to_string()))
+                    .clone();
+                let alt_type = map_type(&alt_type_value, self, owner, Some(&alt_field));
+                (base_field, "VarInt".to_string(), alt_field, alt_type)
+            }
+            RegistryHolderKind::Set => {
+                let base_opts = opts.get("base").and_then(|v| v.as_object());
+                let alt_opts = opts.get("otherwise").and_then(|v| v.as_object());
+
+                let base_field = base_opts
+                    .and_then(|o| o.get("name"))
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("base")
+                    .to_string();
+                let base_type_value = base_opts
+                    .and_then(|o| o.get("type"))
+                    .unwrap_or(&Value::String("void".to_string()))
+                    .clone();
+                let base_type = map_type(&base_type_value, self, owner, Some(&base_field));
+
+                let alt_field = alt_opts
+                    .and_then(|o| o.get("name"))
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("values")
+                    .to_string();
+                let alt_type_value = alt_opts
+                    .and_then(|o| o.get("type"))
+                    .unwrap_or(&Value::String("void".to_string()))
+                    .clone();
+                let alt_type = map_type(&alt_type_value, self, owner, Some(&alt_field));
+                (base_field, base_type, alt_field, alt_type)
+            }
+        };
+
+        let name = type_name(owner, field_name);
+        self.registry_holders.insert(
+            key,
+            RegistryHolderHelper {
+                name: name.clone(),
+                base_field,
+                base_type,
+                alt_field,
+                alt_type,
+                kind,
+            },
+        );
         name
     }
 
@@ -256,6 +353,149 @@ impl HelperCollector {
             )?;
             for field in &helper.fields {
                 writeln!(output, "        self.{}.write_to(buf)?;", field.name)?;
+            }
+            writeln!(output, "        Ok(())")?;
+            writeln!(output, "    }}")?;
+            writeln!(output, "}}")?;
+            writeln!(output)?;
+        }
+        let holder_keys: Vec<String> = self.registry_holders.keys().cloned().collect();
+        for key in holder_keys {
+            let Some(helper) = self.registry_holders.get(&key).cloned() else {
+                continue;
+            };
+            writeln!(output, "#[derive(Default, Debug, Clone, PartialEq)]")?;
+            writeln!(output, "pub struct {} {{", helper.name)?;
+            match helper.kind {
+                RegistryHolderKind::Single => {
+                    writeln!(
+                        output,
+                        "    pub {}: Option<{}>,",
+                        helper.base_field, helper.base_type
+                    )?;
+                    writeln!(
+                        output,
+                        "    pub {}: Option<{}>,",
+                        helper.alt_field, helper.alt_type
+                    )?;
+                }
+                RegistryHolderKind::Set => {
+                    writeln!(
+                        output,
+                        "    pub {}: Option<{}>,",
+                        helper.base_field, helper.base_type
+                    )?;
+                    writeln!(
+                        output,
+                        "    pub {}: Vec<{}>,",
+                        helper.alt_field, helper.alt_type
+                    )?;
+                }
+            }
+            writeln!(output, "}}")?;
+            writeln!(output)?;
+
+            writeln!(output, "impl Serializable for {} {{", helper.name)?;
+            writeln!(
+                output,
+                "    fn read_from<R: io::Read>(buf: &mut R) -> Result<Self, Error> {{"
+            )?;
+            match helper.kind {
+                RegistryHolderKind::Single => {
+                    writeln!(output, "        let tag = VarInt::read_from(buf)?;")?;
+                    writeln!(output, "        if tag.0 != 0 {{")?;
+                    writeln!(
+                        output,
+                        "            Ok(Self {{ {base}: Some(VarInt(tag.0 - 1)), {alt}: None }})",
+                        base = helper.base_field,
+                        alt = helper.alt_field,
+                    )?;
+                    writeln!(output, "        }} else {{")?;
+                    writeln!(
+                        output,
+                        "            Ok(Self {{ {base}: None, {alt}: Some({alt_ty}::read_from(buf)?), }})",
+                        base = helper.base_field,
+                        alt = helper.alt_field,
+                        alt_ty = helper.alt_type,
+                    )?;
+                    writeln!(output, "        }}")?;
+                }
+                RegistryHolderKind::Set => {
+                    writeln!(output, "        let count = VarInt::read_from(buf)?;")?;
+                    writeln!(output, "        if count.0 == 0 {{")?;
+                    writeln!(
+                        output,
+                        "            Ok(Self {{ {base}: Some({base_ty}::read_from(buf)?), {alt}: Vec::new() }})",
+                        base = helper.base_field,
+                        base_ty = helper.base_type,
+                        alt = helper.alt_field,
+                    )?;
+                    writeln!(output, "        }} else {{")?;
+                    writeln!(
+                        output,
+                        "            let mut {alt} = Vec::with_capacity(count.0.saturating_sub(1) as usize);",
+                        alt = helper.alt_field,
+                    )?;
+                    writeln!(
+                        output,
+                        "            for _ in 0..count.0.saturating_sub(1) {{ {alt}.push({alt_ty}::read_from(buf)?); }}",
+                        alt = helper.alt_field,
+                        alt_ty = helper.alt_type,
+                    )?;
+                    writeln!(
+                        output,
+                        "            Ok(Self {{ {base}: None, {alt} }})",
+                        base = helper.base_field,
+                        alt = helper.alt_field,
+                    )?;
+                    writeln!(output, "        }}")?;
+                }
+            }
+            writeln!(output, "    }}")?;
+            writeln!(
+                output,
+                "    fn write_to<W: io::Write>(&self, buf: &mut W) -> Result<(), Error> {{"
+            )?;
+            match helper.kind {
+                RegistryHolderKind::Single => {
+                    writeln!(
+                        output,
+                        "        if let Some(value) = &self.{} {{",
+                        helper.base_field
+                    )?;
+                    writeln!(output, "            VarInt(value.0 + 1).write_to(buf)?;")?;
+                    writeln!(
+                        output,
+                        "        }} else if let Some(value) = &self.{} {{",
+                        helper.alt_field
+                    )?;
+                    writeln!(output, "            VarInt(0).write_to(buf)?;")?;
+                    writeln!(output, "            value.write_to(buf)?;")?;
+                    writeln!(output, "        }} else {{")?;
+                    writeln!(output, "            VarInt(0).write_to(buf)?;")?;
+                    writeln!(output, "        }}")?;
+                }
+                RegistryHolderKind::Set => {
+                    writeln!(
+                        output,
+                        "        if let Some(value) = &self.{} {{",
+                        helper.base_field
+                    )?;
+                    writeln!(output, "            VarInt(0).write_to(buf)?;")?;
+                    writeln!(output, "            value.write_to(buf)?;")?;
+                    writeln!(output, "        }} else {{")?;
+                    writeln!(
+                        output,
+                        "            VarInt(self.{}.len() as i32 + 1).write_to(buf)?;",
+                        helper.alt_field
+                    )?;
+                    writeln!(
+                        output,
+                        "            for entry in &self.{} {{ entry.write_to(buf)?; }}",
+                        helper.alt_field
+                    )?;
+                    writeln!(output, "        }}")?;
+                }
             }
             writeln!(output, "        Ok(())")?;
             writeln!(output, "    }}")?;
@@ -855,6 +1095,9 @@ fn map_type(
                 "container" => {
                     return helpers.register_container(value, &type_name(owner, field_name));
                 }
+                "entityMetadataLoop" => {
+                    return "steven_protocol::types::Metadata".to_string();
+                }
                 "mapper" => {
                     if let Ok(TypeExpr::Mapper(spec)) = TypeExpr::parse(value) {
                         return helpers.register_mapper(owner, field_name, &spec);
@@ -864,6 +1107,22 @@ fn map_type(
                     if let Ok(TypeExpr::Switch(spec)) = TypeExpr::parse(value) {
                         return helpers.register_switch(value, owner, field_name, &spec);
                     }
+                }
+                "registryEntryHolder" => {
+                    return helpers.register_registry_holder(
+                        value,
+                        owner,
+                        field_name,
+                        RegistryHolderKind::Single,
+                    );
+                }
+                "registryEntryHolderSet" => {
+                    return helpers.register_registry_holder(
+                        value,
+                        owner,
+                        field_name,
+                        RegistryHolderKind::Set,
+                    );
                 }
                 _ => {}
             }
@@ -1048,7 +1307,7 @@ fn extract_packet_fields(
     packet_type: &str,
 ) -> Result<Vec<PacketField>> {
     let definition = resolve_type_reference(local_types, global_types, packet_type)?;
-    parse_container_fields(definition)
+    parse_container_fields(definition, local_types, global_types)
 }
 
 fn resolve_type_reference<'a>(
@@ -1083,7 +1342,11 @@ fn resolve_type_reference<'a>(
     }
 }
 
-fn parse_container_fields(type_value: &Value) -> Result<Vec<PacketField>> {
+fn parse_container_fields(
+    type_value: &Value,
+    local_types: &serde_json::Map<String, Value>,
+    global_types: &serde_json::Map<String, Value>,
+) -> Result<Vec<PacketField>> {
     let Some(array) = type_value.as_array() else {
         bail!("packet type definition must be an array");
     };
@@ -1104,9 +1367,16 @@ fn parse_container_fields(type_value: &Value) -> Result<Vec<PacketField>> {
         let Some(ty) = entry.get("type") else {
             bail!("container field {name} missing type");
         };
+        let ty = if let Some(type_name) = ty.as_str() {
+            resolve_type_reference(local_types, global_types, type_name)
+                .unwrap_or(ty)
+                .clone()
+        } else {
+            ty.clone()
+        };
         fields.push(PacketField {
             name: name.to_string(),
-            ty: ty.clone(),
+            ty,
         });
     }
     Ok(fields)
