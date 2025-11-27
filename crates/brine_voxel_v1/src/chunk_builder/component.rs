@@ -63,7 +63,7 @@ impl fmt::Display for BuiltChunk {
 #[derive(Debug, Default, Component)]
 pub struct BuiltChunkSection {
     pub builder: ChunkBuilderType,
-    pub section_y: u8,
+    pub section_y: i16,
 }
 
 impl fmt::Display for BuiltChunkSection {
@@ -115,7 +115,7 @@ pub struct BuiltChunkSectionBundle {
 }
 
 impl BuiltChunkSectionBundle {
-    pub fn new(builder: ChunkBuilderType, section_y: u8) -> Self {
+    pub fn new(builder: ChunkBuilderType, section_y: i16) -> Self {
         let built_chunk_section = BuiltChunkSection { builder, section_y };
 
         let name = Name::new(built_chunk_section.to_string());

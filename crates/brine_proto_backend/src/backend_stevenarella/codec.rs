@@ -146,6 +146,20 @@ impl MinecraftCodec {
     ) -> Result<Packet, Error> {
         let buf = buf.as_ref();
 
+        // Temporary workaround: the generated DeclareRecipes (0x7e) parser for protocol 769
+        // leaves unread bytes, which stalls the play stream. Treat it as unknown so we can
+        // keep consuming packets until the upstream spec is fixed.
+        if protocol_state == MinecraftProtocolState::Play
+            && direction == Direction::Clientbound
+            && packet_id == 0x7e
+            && protocol_version >= 769
+        {
+            return Ok(Packet::Unknown(UnknownPacket {
+                packet_id,
+                body: Vec::from(buf),
+            }));
+        }
+
         let mut cursor = Cursor::new(buf);
 
         let packet = packet::packet_by_id(

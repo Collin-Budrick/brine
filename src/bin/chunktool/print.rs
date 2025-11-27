@@ -18,7 +18,7 @@ pub struct Args {
 
     /// Show detailed information for a specific chunk section.
     #[clap(short, long)]
-    section: Option<usize>,
+    section: Option<i16>,
 }
 
 pub(crate) fn main(args: Args) {
@@ -28,7 +28,7 @@ pub(crate) fn main(args: Args) {
     }
 }
 
-fn print_chunk_from_file(path: &Path, section: Option<usize>) -> Result<()> {
+fn print_chunk_from_file(path: &Path, section: Option<i16>) -> Result<()> {
     let data = MinecraftData::for_version("1.21.4");
     let chunk = load_chunk(path)?;
 
@@ -45,7 +45,7 @@ pub struct ChunkPrinter {
 }
 
 impl ChunkPrinter {
-    fn print_chunk(&self, section: Option<usize>) {
+    fn print_chunk(&self, section: Option<i16>) {
         let section_ys = self
             .chunk
             .sections
@@ -69,7 +69,7 @@ impl ChunkPrinter {
                 .chunk
                 .sections
                 .iter()
-                .find(|section| section.chunk_y as usize == section_y)
+                .find(|section| section.chunk_y == section_y)
                 .expect("Chunk has no section at that y-height");
 
             self.print_section(section, true);

@@ -2045,6 +2045,7 @@ dependencies = [
  "brine_chunk",
  "brine_net",
  "brine_proto",
+ "byteorder",
  "flate2",
  "futures",
  "pretty-hex",

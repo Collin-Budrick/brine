@@ -39,7 +39,7 @@ pub struct ChunkMeta {
     #[serde(rename = "z")]
     pub chunk_z: i32,
     #[serde(rename = "bitMap")]
-    pub bitmask: u16,
+    pub bitmask: u32,
 }
 
 /// Loads **undecoded** chunk data from a pair of `.dump` and `.meta` files.

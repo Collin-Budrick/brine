@@ -73,18 +73,45 @@ struct LoginResource {
 #[derive(Resource, Default)]
 struct ConfigurationState {
     started: bool,
+    sent_settings: bool,
+    start_config_seen: bool,
 }
 
-#[derive(Resource, Default)]
+#[derive(Resource)]
 struct DebugPacketCounter {
     seen: usize,
     log_after_config: bool,
+    unknown_logged: usize,
+}
+
+#[derive(Resource, Default)]
+struct TickEndState {
+    last_sent_seconds: f64,
+}
+
+#[derive(Resource, Default)]
+struct BrandState {
+    sent_brand: bool,
+}
+
+impl Default for DebugPacketCounter {
+    fn default() -> Self {
+        Self {
+            seen: 0,
+            // Log a handful of packets as soon as we hit play so we can see
+            // whether chunk traffic is flowing.
+            log_after_config: false,
+            unknown_logged: 0,
+        }
+    }
 }
 
 pub(crate) fn build(app: &mut App) {
     app.init_state::<LoginState>();
     app.init_resource::<ConfigurationState>();
     app.init_resource::<DebugPacketCounter>();
+    app.init_resource::<TickEndState>();
+    app.init_resource::<BrandState>();
 
     protocol_discovery::build(app);
     login::build(app);
@@ -366,7 +393,11 @@ mod play {
                 handle_configuration_start,
                 respond_to_position_packets,
                 respond_to_chunk_batch_packets,
+                respond_to_cookie_requests,
                 debug_log_incoming_packets,
+                log_network_events,
+                send_tick_end,
+                send_brand_message,
                 handle_disconnect,
             )
                 .run_if(in_state(LoginState::Play)),
@@ -378,6 +409,23 @@ mod play {
         mut packet_writer: CodecWriter<ProtocolCodec>,
         mut config_state: ResMut<ConfigurationState>,
     ) {
+        let send_config_settings = |writer: &mut CodecWriter<ProtocolCodec>| {
+            let settings = Packet::Known(packet::Packet::ConfigurationServerboundSettings(
+                Box::new(packet::configuration::serverbound::Settings {
+                    locale: "en_us".to_string(),
+                    viewDistance: 12,
+                    chatFlags: VarInt(0),
+                    chatColors: true,
+                    skinParts: 0x7F,
+                    mainHand: VarInt(1), // 0=left,1=right
+                    enableTextFiltering: false,
+                    enableServerListing: true,
+                    particleStatus: packet::SettingsParticlestatus::All,
+                }),
+            ));
+            writer.send(settings);
+        };
+
         let send_play_settings = |writer: &mut CodecWriter<ProtocolCodec>| {
             let settings = Packet::Known(packet::Packet::PlayServerboundSettings(Box::new(
                 packet::play::serverbound::Settings {
@@ -395,32 +443,34 @@ mod play {
             writer.send(settings);
         };
 
+        let mut ensure_config_settings =
+            |writer: &mut CodecWriter<ProtocolCodec>, config_state: &mut ConfigurationState| {
+                if !config_state.sent_settings {
+                    debug!("Sending configuration settings (begin configuration phase)");
+                    send_config_settings(writer);
+                    config_state.sent_settings = true;
+                    config_state.started = true;
+                }
+            };
+
         for packet in packet_reader.iter() {
             if let Packet::Known(packet::Packet::PlayClientboundStartConfiguration(_)) = packet {
                 // Send default client settings expected during configuration, then finish configuration.
-                let settings = Packet::Known(packet::Packet::ConfigurationServerboundSettings(
-                    Box::new(packet::configuration::serverbound::Settings {
-                        locale: "en_us".to_string(),
-                        viewDistance: 12,
-                        chatFlags: VarInt(0),
-                        chatColors: true,
-                        skinParts: 0x7F,
-                        mainHand: VarInt(1), // 0=left,1=right
-                        enableTextFiltering: false,
-                        enableServerListing: true,
-                        particleStatus: packet::SettingsParticlestatus::All,
-                    }),
-                ));
-                packet_writer.send(settings);
+                debug!("StartConfiguration received; entering config phase");
 
+                config_state.sent_settings = false;
+                ensure_config_settings(&mut packet_writer, &mut config_state);
                 config_state.started = true;
-                break;
+                config_state.start_config_seen = true;
+                continue;
             }
 
             if let Packet::Known(packet::Packet::ConfigurationClientboundSelectKnownPacks(
                 select_known_packs,
             )) = packet
             {
+                ensure_config_settings(&mut packet_writer, &mut config_state);
+
                 debug!(
                     "SelectKnownPacks received with {} packs; echoing selection",
                     select_known_packs.packs.values.len()
@@ -435,25 +485,47 @@ mod play {
                 continue;
             }
 
+            if let Packet::Known(packet::Packet::ConfigurationClientboundCookieRequest(
+                cookie_request,
+            )) = packet
+            {
+                ensure_config_settings(&mut packet_writer, &mut config_state);
+
+                debug!(
+                    "Configuration cookie request for key {}; responding with none",
+                    cookie_request.cookie
+                );
+                let response =
+                    Packet::Known(packet::Packet::ConfigurationServerboundCookieResponse(Box::new(
+                        packet::configuration::serverbound::CookieResponse {
+                            key: cookie_request.cookie.clone(),
+                            value: packet::OptionFlag { value: None },
+                        },
+                    )));
+                packet_writer.send(response);
+                continue;
+            }
+
             if let Packet::Known(packet::Packet::ConfigurationClientboundFinishConfiguration(_)) =
                 packet
             {
+                ensure_config_settings(&mut packet_writer, &mut config_state);
+
+                if !config_state.started {
+                    warn!("FinishConfiguration received but config_state.started was false; proceeding anyway");
+                    config_state.started = true;
+                }
                 let finish = Packet::Known(packet::Packet::ConfigurationServerboundFinishConfiguration(
                     Box::new(packet::configuration::serverbound::FinishConfiguration {}),
                 ));
                 packet_writer.send(finish);
-                let ack_config = config_state.started;
                 config_state.started = false;
+                config_state.sent_settings = false;
+                debug!("FinishConfiguration received; sending FinishConfiguration response");
 
-                // Acknowledge the transition back to Play (only when the server explicitly
-                // requested configuration) and send play-state settings as well.
-                if ack_config {
-                    let acknowledged =
-                        Packet::Known(packet::Packet::PlayServerboundConfigurationAcknowledged(
-                            Box::new(packet::play::serverbound::ConfigurationAcknowledged {}),
-                        ));
-                    packet_writer.send(acknowledged);
-                }
+                config_state.start_config_seen = false;
+
+                // Send play-state settings as we transition into Play.
                 send_play_settings(&mut packet_writer);
 
                 // Notify the server that the client finished loading into the play state.
@@ -464,6 +536,17 @@ mod play {
                 packet_writer.send(player_loaded);
                 break;
             }
+
+            if matches!(
+                packet,
+                Packet::Known(packet::Packet::ConfigurationClientboundFeatureFlags(_))
+                    | Packet::Known(packet::Packet::ConfigurationClientboundRegistryData(_))
+                    | Packet::Known(packet::Packet::ConfigurationClientboundCustomPayload(_))
+                    | Packet::Known(packet::Packet::ConfigurationClientboundKeepAlive(_))
+                    | Packet::Known(packet::Packet::ConfigurationClientboundPing(_))
+            ) {
+                ensure_config_settings(&mut packet_writer, &mut config_state);
+            }
         }
     }
 
@@ -471,19 +554,141 @@ mod play {
         mut packet_reader: CodecReader<ProtocolCodec>,
         mut counter: ResMut<DebugPacketCounter>,
     ) {
+        const MAX_UNKNOWN_LOGS: usize = 64;
+        const MAX_GENERIC_LOGS: usize = 64;
+
         for packet in packet_reader.iter() {
             if let Packet::Known(packet::Packet::ConfigurationClientboundFinishConfiguration(_)) =
                 &packet
             {
                 counter.log_after_config = true;
+                counter.seen = 0;
+                debug!("Configuration finished; enabling play-phase packet logging");
                 continue;
             }
 
-            if !counter.log_after_config || counter.seen >= 64 {
-                break;
+            if let Packet::Unknown(unknown) = &packet {
+                if counter.unknown_logged < MAX_UNKNOWN_LOGS {
+                    debug!(
+                        "Unknown inbound packet id=0x{:02X} ({} bytes): {:?}",
+                        unknown.packet_id,
+                        unknown.body.len(),
+                        unknown
+                    );
+                    counter.unknown_logged += 1;
+                } else if counter.unknown_logged == MAX_UNKNOWN_LOGS {
+                    debug!(
+                        "Suppressing further unknown packet logs after {} entries",
+                        MAX_UNKNOWN_LOGS
+                    );
+                    counter.unknown_logged += 1;
+                }
             }
-            debug!("Incoming packet: {:?}", packet);
-            counter.seen += 1;
+
+            // Always surface chunk-related packets to help debugging world loading.
+            match packet {
+                Packet::Known(packet::Packet::PlayClientboundMapChunk(_))
+                | Packet::Known(packet::Packet::PlayClientboundChunkBatchStart(_))
+                | Packet::Known(packet::Packet::PlayClientboundChunkBatchFinished(_)) => {
+                    debug!("Incoming packet: {:?}", packet);
+                    continue;
+                }
+                Packet::Known(packet::Packet::PlayClientboundPosition(pos)) => {
+                    debug!(
+                        "PlayClientboundPosition teleport_id={}, pos=({}, {}, {}), angles=({}, {})",
+                        pos.teleportId.0, pos.x, pos.y, pos.z, pos.yaw, pos.pitch
+                    );
+                    continue;
+                }
+                Packet::Known(packet::Packet::PlayClientboundKeepAlive(_)) => {
+                    debug!("Incoming packet: {:?}", packet);
+                    continue;
+                }
+                Packet::Known(packet::Packet::PlayClientboundDeclareRecipes(recipes)) => {
+                    debug!(
+                        "DeclareRecipes packet: {} recipes, {} stonecutter entries",
+                        recipes.recipes.values.len(),
+                        recipes.stoneCutterRecipes.values.len()
+                    );
+                    continue;
+                }
+                Packet::Known(packet::Packet::PlayClientboundTags(tags)) => {
+                    debug!("Tags packet: {} tag groups", tags.tags.values.len());
+                    continue;
+                }
+                _ => {
+                    // Keep a small rolling log of generic packets once in play to avoid drowning
+                    // in recipe/tag spam.
+                    if counter.log_after_config && counter.seen < MAX_GENERIC_LOGS {
+                        debug!("Incoming packet: {:?}", packet);
+                        counter.seen += 1;
+                    } else if counter.log_after_config && counter.seen == MAX_GENERIC_LOGS {
+                        debug!(
+                            "Packet debug log limit ({}) reached; suppressing further generic logs",
+                            MAX_GENERIC_LOGS
+                        );
+                        counter.seen += 1;
+                    }
+                }
+            }
+        }
+    }
+
+    fn log_network_events(mut network_events: MessageReader<NetworkEvent<ProtocolCodec>>) {
+        for event in network_events.read() {
+            match event {
+                NetworkEvent::Error(error) => warn!("Network error during play: {}", error),
+                NetworkEvent::Disconnected => warn!("Network disconnected during play state"),
+                _ => {}
+            }
+        }
+    }
+
+    fn send_brand_message(
+        mut packet_reader: CodecReader<ProtocolCodec>,
+        mut packet_writer: CodecWriter<ProtocolCodec>,
+        mut brand_state: ResMut<BrandState>,
+    ) {
+        for packet in packet_reader.iter() {
+            if let Packet::Known(packet::Packet::PlayClientboundLogin(_)) = packet {
+                if !brand_state.sent_brand {
+                    let brand = "brine";
+                    let mut data = Vec::new();
+                    if let Err(err) = VarInt(brand.len() as i32).write_to(&mut data) {
+                        warn!("Failed to serialize brand length: {}", err);
+                        continue;
+                    }
+                    data.extend_from_slice(brand.as_bytes());
+
+                    let payload =
+                        Packet::Known(packet::Packet::PlayServerboundCustomPayload(Box::new(
+                            packet::play::serverbound::CustomPayload {
+                                channel: "minecraft:brand".to_string(),
+                                data,
+                            },
+                        )));
+                    packet_writer.send(payload);
+                    brand_state.sent_brand = true;
+                    debug!("Sent brand plugin message (minecraft:brand=brine)");
+                }
+            }
+        }
+    }
+
+    fn send_tick_end(
+        mut packet_writer: CodecWriter<ProtocolCodec>,
+        time: Res<Time>,
+        mut tick_state: ResMut<TickEndState>,
+    ) {
+        // Send a periodic TickEnd to keep the server's tick stream moving.
+        let now = time.elapsed_secs_f64();
+        if now - tick_state.last_sent_seconds > 1.0 {
+            let tick_end = Packet::Known(packet::Packet::PlayServerboundTickEnd(Box::new(
+                packet::play::serverbound::TickEnd {},
+            )));
+            packet_writer.send(tick_end);
+            tick_state.last_sent_seconds = now;
+            debug!("Sent PlayServerboundTickEnd");
         }
     }
 
@@ -513,6 +718,11 @@ mod play {
                         }),
                     ));
                     packet_writer.send(movement);
+
+                    debug!(
+                        "Position packet received: teleport_id={}, pos=({}, {}, {}), angles=({}, {})",
+                        pos.teleportId.0, pos.x, pos.y, pos.z, pos.yaw, pos.pitch
+                    );
                 }
                 _ => {}
             }
@@ -537,6 +747,7 @@ mod play {
                             packet::play::serverbound::ChunkBatchReceived { chunksPerTick: 5.0 },
                         )));
                     packet_writer.send(ack);
+                    debug!("Chunk batch finished; acknowledged with chunksPerTick=5.0");
                     saw_batch_start = false;
                 }
                 _ => {}
@@ -583,6 +794,30 @@ mod play {
         }
     }
 
+    fn respond_to_cookie_requests(
+        mut packet_reader: CodecReader<ProtocolCodec>,
+        mut packet_writer: CodecWriter<ProtocolCodec>,
+    ) {
+        for packet in packet_reader.iter() {
+            if let Packet::Known(packet::Packet::PlayClientboundCookieRequest(cookie_request)) =
+                packet
+            {
+                debug!(
+                    "Play cookie request for key {}; responding with none",
+                    cookie_request.cookie
+                );
+                let response =
+                    Packet::Known(packet::Packet::PlayServerboundCookieResponse(Box::new(
+                        packet::play::serverbound::CookieResponse {
+                            key: cookie_request.cookie.clone(),
+                            value: packet::OptionFlag { value: None },
+                        },
+                    )));
+                packet_writer.send(response);
+            }
+        }
+    }
+
     fn handle_disconnect(
         mut packet_reader: CodecReader<ProtocolCodec>,
         mut disconnect_events: MessageWriter<Disconnect>,
@@ -591,10 +826,12 @@ mod play {
             match packet {
                 Packet::Known(packet::Packet::PlayClientboundKickDisconnect(disconnect)) => {
                     let reason = format!("{:?}", disconnect.reason);
+                    debug!("Play disconnect: {}", &reason);
                     disconnect_events.write(Disconnect { reason });
                 }
                 Packet::Known(packet::Packet::ConfigurationClientboundDisconnect(disconnect)) => {
                     let reason = format!("{:?}", disconnect.reason);
+                    debug!("Configuration disconnect: {}", &reason);
                     disconnect_events.write(Disconnect { reason });
                 }
                 _ => {}

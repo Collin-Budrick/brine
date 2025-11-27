@@ -5,7 +5,8 @@ use tracing::trace;
 
 use crate::{
     palette::{Palette, SectionPalette},
-    Biomes, BlockState, BlockStates, Chunk, ChunkSection, BLOCKS_PER_SECTION, SECTIONS_PER_CHUNK,
+    Biomes, BlockState, BlockStates, Chunk, ChunkSection, BLOCKS_PER_SECTION, SECTION_Y_BASE,
+    SECTIONS_PER_CHUNK,
 };
 
 mod packed_vec;
@@ -55,7 +56,7 @@ impl Chunk {
         chunk_x: i32,
         chunk_z: i32,
         full_chunk: bool,
-        primary_bit_mask: u16,
+        primary_bit_mask: u32,
         global_palette: &impl Palette,
         data: &mut impl io::Read,
     ) -> Result<Self> {
@@ -80,7 +81,7 @@ impl Chunk {
 
     /// Decodes a list of [`ChunkSection`]s from a data blob.
     pub fn decode_chunk_sections(
-        primary_bit_mask: u16,
+        primary_bit_mask: u32,
         global_palette: &impl Palette,
         data: &mut impl io::Read,
     ) -> Result<Vec<ChunkSection>> {
@@ -102,11 +103,11 @@ impl Chunk {
     ///
     /// See also
     /// <https://wiki.vg/index.php?title=Chunk_Format&oldid=14901#Empty_sections_and_the_primary_bit_mask>
-    pub fn bitmask_to_section_y_coordinates(bitmask: u16) -> Vec<u8> {
+    pub fn bitmask_to_section_y_coordinates(bitmask: u32) -> Vec<i16> {
         let mut y_coords = Vec::new();
         for i in 0..SECTIONS_PER_CHUNK {
             if (bitmask & (1 << i)) != 0 {
-                y_coords.push(i as u8);
+                y_coords.push(SECTION_Y_BASE + i as i16);
             }
         }
         y_coords
@@ -123,7 +124,7 @@ impl ChunkSection {
     /// See also
     /// <https://wiki.vg/index.php?title=Chunk_Format&oldid=14901#Chunk_Section_structure>
     pub fn decode(
-        chunk_y: u8,
+        chunk_y: i16,
         global_palette: &impl Palette,
         data: &mut impl io::Read,
     ) -> Result<Self> {

@@ -9,11 +9,13 @@ pub mod palette;
 
 pub use palette::{Palette, SectionPalette};
 
-pub const CHUNK_HEIGHT: usize = 256;
+pub const CHUNK_HEIGHT: usize = 384;
 pub const CHUNK_WIDTH: usize = 16;
 pub const SECTION_HEIGHT: usize = 16;
 pub const SECTION_WIDTH: usize = CHUNK_WIDTH;
 pub const SECTIONS_PER_CHUNK: usize = CHUNK_HEIGHT / SECTION_HEIGHT;
+pub const CHUNK_MIN_Y: i16 = -64;
+pub const SECTION_Y_BASE: i16 = CHUNK_MIN_Y / SECTION_HEIGHT as i16;
 pub const BLOCKS_PER_SECTION: usize = SECTION_HEIGHT * SECTION_WIDTH * SECTION_WIDTH;
 
 /// A [`Chunk`] is a 16x256x16 chunk of blocks. It is split vertically into 16 chunk
@@ -71,7 +73,7 @@ impl Chunk {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ChunkSection {
     /// Chunk coordinate (block coordinate divided by 16, rounded down).
-    pub chunk_y: u8,
+    pub chunk_y: i16,
     /// Number of non-air blocks present in the chunk section, for lighting
     /// purposes. "Non-air" is defined as any block other than air, cave air,
     /// and void air (in particular, note that fluids such as water are still
@@ -82,7 +84,7 @@ pub struct ChunkSection {
 }
 
 impl ChunkSection {
-    pub fn empty(chunk_y: u8) -> Self {
+    pub fn empty(chunk_y: i16) -> Self {
         Self {
             chunk_y,
             block_count: 0,
