@@ -75,9 +75,16 @@ struct ConfigurationState {
     started: bool,
 }
 
+#[derive(Resource, Default)]
+struct DebugPacketCounter {
+    seen: usize,
+    log_after_config: bool,
+}
+
 pub(crate) fn build(app: &mut App) {
     app.init_state::<LoginState>();
     app.init_resource::<ConfigurationState>();
+    app.init_resource::<DebugPacketCounter>();
 
     protocol_discovery::build(app);
     login::build(app);
@@ -359,6 +366,7 @@ mod play {
                 handle_configuration_start,
                 respond_to_position_packets,
                 respond_to_chunk_batch_packets,
+                debug_log_incoming_packets,
                 handle_disconnect,
             )
                 .run_if(in_state(LoginState::Play)),
@@ -409,27 +417,73 @@ mod play {
                 break;
             }
 
+            if let Packet::Known(packet::Packet::ConfigurationClientboundSelectKnownPacks(
+                select_known_packs,
+            )) = packet
+            {
+                debug!(
+                    "SelectKnownPacks received with {} packs; echoing selection",
+                    select_known_packs.packs.values.len()
+                );
+                let select_known_packs =
+                    Packet::Known(packet::Packet::ConfigurationServerboundSelectKnownPacks(
+                        Box::new(packet::configuration::serverbound::SelectKnownPacks {
+                            packs: select_known_packs.packs.clone(),
+                        }),
+                    ));
+                packet_writer.send(select_known_packs);
+                continue;
+            }
+
             if let Packet::Known(packet::Packet::ConfigurationClientboundFinishConfiguration(_)) =
                 packet
             {
-                if config_state.started {
-                    let finish =
-                        Packet::Known(packet::Packet::ConfigurationServerboundFinishConfiguration(
-                            Box::new(packet::configuration::serverbound::FinishConfiguration {}),
-                        ));
-                    packet_writer.send(finish);
-                    config_state.started = false;
+                let finish = Packet::Known(packet::Packet::ConfigurationServerboundFinishConfiguration(
+                    Box::new(packet::configuration::serverbound::FinishConfiguration {}),
+                ));
+                packet_writer.send(finish);
+                let ack_config = config_state.started;
+                config_state.started = false;
 
-                    // Acknowledge the transition back to Play and send play-state settings as well.
+                // Acknowledge the transition back to Play (only when the server explicitly
+                // requested configuration) and send play-state settings as well.
+                if ack_config {
                     let acknowledged =
                         Packet::Known(packet::Packet::PlayServerboundConfigurationAcknowledged(
                             Box::new(packet::play::serverbound::ConfigurationAcknowledged {}),
                         ));
                     packet_writer.send(acknowledged);
-                    send_play_settings(&mut packet_writer);
                 }
+                send_play_settings(&mut packet_writer);
+
+                // Notify the server that the client finished loading into the play state.
+                let player_loaded =
+                    Packet::Known(packet::Packet::PlayServerboundPlayerLoaded(Box::new(
+                        packet::play::serverbound::PlayerLoaded {},
+                    )));
+                packet_writer.send(player_loaded);
                 break;
             }
+        }
+    }
+
+    fn debug_log_incoming_packets(
+        mut packet_reader: CodecReader<ProtocolCodec>,
+        mut counter: ResMut<DebugPacketCounter>,
+    ) {
+        for packet in packet_reader.iter() {
+            if let Packet::Known(packet::Packet::ConfigurationClientboundFinishConfiguration(_)) =
+                &packet
+            {
+                counter.log_after_config = true;
+                continue;
+            }
+
+            if !counter.log_after_config || counter.seen >= 64 {
+                break;
+            }
+            debug!("Incoming packet: {:?}", packet);
+            counter.seen += 1;
         }
     }
 
