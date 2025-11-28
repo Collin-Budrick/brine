@@ -7,3 +7,6 @@ temp-mc-assets/
 debug.plist
 client-run.err
 client-run.log
+client-run*.err
+client-run*.log
+client-run*.out

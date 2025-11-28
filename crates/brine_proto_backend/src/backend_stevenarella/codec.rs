@@ -1,9 +1,12 @@
 use std::{
     borrow::Cow,
+    fs::OpenOptions,
     io::{self, Cursor, Read, Write},
     ops::Deref,
+    sync::{Mutex, OnceLock},
 };
 
+use ::log as raw_log;
 use bevy::log;
 use flate2::{read::ZlibDecoder, write::ZlibEncoder, Compression};
 use steven_protocol::protocol::{self, State, VarInt};
@@ -59,9 +62,83 @@ impl From<State> for MinecraftProtocolState {
 #[derive(Debug)]
 pub struct MinecraftCodec;
 
+const RAW_PACKET_DUMP_MAX_BYTES: usize = 64;
+static PACKET_DUMP: OnceLock<Option<Mutex<std::fs::File>>> = OnceLock::new();
+
 pub type ProtocolCodec = MinecraftClientCodec<MinecraftCodec>;
 
 impl MinecraftCodec {
+    fn packet_dump_file() -> Option<&'static Mutex<std::fs::File>> {
+        PACKET_DUMP
+            .get_or_init(|| {
+                let path = std::env::var_os("BRINE_PACKET_DUMP")?;
+                let file = OpenOptions::new()
+                    .create(true)
+                    .append(true)
+                    .open(path)
+                    .ok()?;
+                Some(Mutex::new(file))
+            })
+            .as_ref()
+    }
+
+    fn dump_packet_to_file(
+        packet_id: i32,
+        protocol_state: MinecraftProtocolState,
+        direction: Direction,
+        body: &[u8],
+    ) {
+        if let Some(file) = Self::packet_dump_file() {
+            if let Ok(mut handle) = file.lock() {
+                let hex_dump = body
+                    .iter()
+                    .map(|byte| format!("{:02X}", byte))
+                    .collect::<Vec<_>>()
+                    .join(" ");
+                let _ = writeln!(
+                    handle,
+                    "id=0x{:02X} state={:?} dir={:?} len={} bytes={}",
+                    packet_id,
+                    protocol_state,
+                    direction,
+                    body.len(),
+                    hex_dump
+                );
+            }
+        }
+    }
+
+    fn trace_packet_body(
+        packet_id: i32,
+        protocol_state: MinecraftProtocolState,
+        direction: Direction,
+        body: &[u8],
+    ) {
+        if raw_log::max_level() < raw_log::LevelFilter::Trace {
+            return;
+        }
+
+        let shown_bytes = body.len().min(RAW_PACKET_DUMP_MAX_BYTES);
+        let hex_dump = body
+            .iter()
+            .take(shown_bytes)
+            .map(|byte| format!("{:02X}", byte))
+            .collect::<Vec<_>>()
+            .join(" ");
+        let ellipsis = if body.len() > shown_bytes { " ..." } else { "" };
+
+        log::trace!(
+            "Raw packet body id=0x{:02X} state={:?} dir={:?} len={} shown={} bytes={}{}",
+            packet_id,
+            protocol_state,
+            direction,
+            body.len(),
+            shown_bytes,
+            hex_dump,
+            ellipsis,
+        );
+    }
+
     pub fn decode_packet(
         protocol_version: i32,
         protocol_state: MinecraftProtocolState,
@@ -124,6 +201,9 @@ impl MinecraftCodec {
         let data_start = id_cursor.position() as usize;
         let data_slice = &body_bytes.as_ref()[data_start..];
 
+        Self::trace_packet_body(packet_id, protocol_state, direction, body_bytes.as_ref());
+        Self::dump_packet_to_file(packet_id, protocol_state, direction, body_bytes.as_ref());
+
         let packet = Self::decode_packet_with_id(
             protocol_version,
             protocol_state,
@@ -146,12 +226,32 @@ impl MinecraftCodec {
     ) -> Result<Packet, Error> {
         let buf = buf.as_ref();
 
+        log::debug!(
+            "Decoding packet id=0x{:02X} state={:?} dir={:?} ({} bytes)",
+            packet_id,
+            protocol_state,
+            direction,
+            buf.len()
+        );
+
         // Temporary workaround: the generated DeclareRecipes (0x7e) parser for protocol 769
         // leaves unread bytes, which stalls the play stream. Treat it as unknown so we can
         // keep consuming packets until the upstream spec is fixed.
         if protocol_state == MinecraftProtocolState::Play
             && direction == Direction::Clientbound
             && packet_id == 0x7e
+            && protocol_version >= 769
+        {
+            return Ok(Packet::Unknown(UnknownPacket {
+                packet_id,
+                body: Vec::from(buf),
+            }));
+        }
+        // Parsers for several large metadata packets are incomplete in the generated 1.21.4 tables.
+        // Skipping them keeps the stream aligned so chunk packets can still be decoded.
+        if protocol_state == MinecraftProtocolState::Play
+            && direction == Direction::Clientbound
+            && matches!(packet_id, 0x11 | 0x40 | 0x42 | 0x44 | 0x46 | 0x50)
             && protocol_version >= 769
         {
             return Ok(Packet::Unknown(UnknownPacket {

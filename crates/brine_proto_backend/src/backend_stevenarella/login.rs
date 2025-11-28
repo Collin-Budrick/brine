@@ -75,6 +75,7 @@ struct ConfigurationState {
     started: bool,
     sent_settings: bool,
     start_config_seen: bool,
+    finished: bool,
 }
 
 #[derive(Resource)]
@@ -459,6 +460,7 @@ mod play {
                 debug!("StartConfiguration received; entering config phase");
 
                 config_state.sent_settings = false;
+                config_state.finished = false;
                 ensure_config_settings(&mut packet_writer, &mut config_state);
                 config_state.started = true;
                 config_state.start_config_seen = true;
@@ -496,12 +498,12 @@ mod play {
                     cookie_request.cookie
                 );
                 let response =
-                    Packet::Known(packet::Packet::ConfigurationServerboundCookieResponse(Box::new(
-                        packet::configuration::serverbound::CookieResponse {
+                    Packet::Known(packet::Packet::ConfigurationServerboundCookieResponse(
+                        Box::new(packet::configuration::serverbound::CookieResponse {
                             key: cookie_request.cookie.clone(),
                             value: packet::OptionFlag { value: None },
-                        },
-                    )));
+                        }),
+                    ));
                 packet_writer.send(response);
                 continue;
             }
@@ -515,11 +517,13 @@ mod play {
                     warn!("FinishConfiguration received but config_state.started was false; proceeding anyway");
                     config_state.started = true;
                 }
-                let finish = Packet::Known(packet::Packet::ConfigurationServerboundFinishConfiguration(
-                    Box::new(packet::configuration::serverbound::FinishConfiguration {}),
-                ));
+                let finish =
+                    Packet::Known(packet::Packet::ConfigurationServerboundFinishConfiguration(
+                        Box::new(packet::configuration::serverbound::FinishConfiguration {}),
+                    ));
                 packet_writer.send(finish);
                 config_state.started = false;
+                config_state.finished = true;
                 config_state.sent_settings = false;
                 debug!("FinishConfiguration received; sending FinishConfiguration response");
 
@@ -529,10 +533,9 @@ mod play {
                 send_play_settings(&mut packet_writer);
 
                 // Notify the server that the client finished loading into the play state.
-                let player_loaded =
-                    Packet::Known(packet::Packet::PlayServerboundPlayerLoaded(Box::new(
-                        packet::play::serverbound::PlayerLoaded {},
-                    )));
+                let player_loaded = Packet::Known(packet::Packet::PlayServerboundPlayerLoaded(
+                    Box::new(packet::play::serverbound::PlayerLoaded {}),
+                ));
                 packet_writer.send(player_loaded);
                 break;
             }
@@ -660,13 +663,12 @@ mod play {
                     }
                     data.extend_from_slice(brand.as_bytes());
 
-                    let payload =
-                        Packet::Known(packet::Packet::PlayServerboundCustomPayload(Box::new(
-                            packet::play::serverbound::CustomPayload {
-                                channel: "minecraft:brand".to_string(),
-                                data,
-                            },
-                        )));
+                    let payload = Packet::Known(packet::Packet::PlayServerboundCustomPayload(
+                        Box::new(packet::play::serverbound::CustomPayload {
+                            channel: "minecraft:brand".to_string(),
+                            data,
+                        }),
+                    ));
                     packet_writer.send(payload);
                     brand_state.sent_brand = true;
                     debug!("Sent brand plugin message (minecraft:brand=brine)");
@@ -678,8 +680,13 @@ mod play {
     fn send_tick_end(
         mut packet_writer: CodecWriter<ProtocolCodec>,
         time: Res<Time>,
+        config_state: Res<ConfigurationState>,
         mut tick_state: ResMut<TickEndState>,
     ) {
+        if !config_state.finished {
+            return;
+        }
+
         // Send a periodic TickEnd to keep the server's tick stream moving.
         let now = time.elapsed_secs_f64();
         if now - tick_state.last_sent_seconds > 1.0 {
@@ -806,13 +813,12 @@ mod play {
                     "Play cookie request for key {}; responding with none",
                     cookie_request.cookie
                 );
-                let response =
-                    Packet::Known(packet::Packet::PlayServerboundCookieResponse(Box::new(
-                        packet::play::serverbound::CookieResponse {
-                            key: cookie_request.cookie.clone(),
-                            value: packet::OptionFlag { value: None },
-                        },
-                    )));
+                let response = Packet::Known(packet::Packet::PlayServerboundCookieResponse(
+                    Box::new(packet::play::serverbound::CookieResponse {
+                        key: cookie_request.cookie.clone(),
+                        value: packet::OptionFlag { value: None },
+                    }),
+                ));
                 packet_writer.send(response);
             }
         }

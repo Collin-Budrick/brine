@@ -2048,6 +2048,7 @@ dependencies = [
  "byteorder",
  "flate2",
  "futures",
+ "log",
  "pretty-hex",
  "serde_json",
  "steven_protocol",

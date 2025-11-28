@@ -5,6 +5,7 @@ edition = "2021"
 
 [dependencies]
 bevy = { version = "0.17.3", default-features = false }
+log = "0.4"
 bevy_ecs = "0.17.3"
 byteorder = "1.5.0"
 pretty-hex = "0.4.1"
